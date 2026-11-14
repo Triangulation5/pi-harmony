@@ -41,6 +41,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 	wrapTextWithAnsi,
+	type Component,
 } from "@earendil-works/pi-tui";
 import * as PiTui from "@earendil-works/pi-tui";
 
@@ -50,6 +51,8 @@ interface TuiMouseEvent {
 	button: string;
 	x: number;
 	y: number;
+	screenX: number;
+	screenY: number;
 	width: number;
 	height: number;
 	clickCount?: number;
@@ -59,6 +62,16 @@ interface TuiMouseEventResult {
 	capture?: boolean;
 	focus?: boolean;
 	render?: boolean;
+}
+interface TuiMouseDispatchResult extends TuiMouseEventResult {
+	handled: true;
+	target: {
+		component: Component;
+		originX: number;
+		originY: number;
+		width: number;
+		height: number;
+	};
 }
 type MouseLayoutEntry = { component?: any; height: number; top: number };
 
@@ -1126,7 +1139,7 @@ function patchBashFileEditGrouping(): void {
 class ToolGroupComponent extends Container {
 	private tools: any[] = [];
 	expanded = false;
-	private mouseLayout?: { width: number; children: MouseLayoutEntry[] };
+	groupMouseLayout?: { width: number; children: MouseLayoutEntry[] };
 	// Memoize full group output. Grouped history is the long-chat bottleneck:
 	// each warm frame used to re-render every child tool, re-branch lines, and
 	// re-clamp every row even when nothing changed.
@@ -1222,19 +1235,19 @@ class ToolGroupComponent extends Container {
 		if (changed) for (const tool of this.tools) tool?.invalidate?.();
 	}
 
-	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-		const target = mouseLayoutTarget(this.mouseLayout, event);
+	handleMouse(event: TuiMouseEvent): TuiMouseDispatchResult | undefined {
+		const target = mouseLayoutTarget(this.groupMouseLayout, event);
 		// The whole group is one click target: any of its lines toggles all of its calls, so a
 		// group is never left half open (which made the next click on it re-expand instead of
 		// collapse). Hover lights up the group's sentence wherever the pointer is on it.
 		if (event.type === "move") {
-			const header = this.mouseLayout?.children.find((entry) => !entry.component);
+			const header = this.groupMouseLayout?.children.find((entry) => !entry.component);
 			const row = target ? (header?.top ?? target.top) : -1;
 			claimClickHover(this, () => { if (setGroupHover(this, -1)) requestComponentRender(this); });
-			return setGroupHover(this, row) ? { handled: true, render: true } : undefined;
+			return dispatchTarget(this, event, setGroupHover(this, row) ? { handled: true, render: true } : undefined);
 		}
 		if (isPrimaryClick(event) && target) {
-			return toggleGroupedTools(this, this.tools, event);
+			return dispatchTarget(this, event, toggleGroupedTools(this, this.tools, event));
 		}
 		return undefined;
 	}
@@ -1257,7 +1270,7 @@ class ToolGroupComponent extends Container {
 			&& this.cachedMode === toolBackgroundMode
 			&& this.cachedExpanded === this.expanded
 		) {
-			return applyGroupHover(this.cachedLines, this.mouseLayout, (this as any)[GROUP_HOVER_KEY]);
+			return applyGroupHover(this.cachedLines, this.groupMouseLayout, (this as any)[GROUP_HOVER_KEY]);
 		}
 
 		const status = this.statusSnapshot();
@@ -1354,7 +1367,7 @@ class ToolGroupComponent extends Container {
 		} else {
 			this.clearRenderCache();
 		}
-		return applyGroupHover(lines, this.mouseLayout, (this as any)[GROUP_HOVER_KEY]);
+		return applyGroupHover(lines, this.groupMouseLayout, (this as any)[GROUP_HOVER_KEY]);
 	}
 }
 
@@ -1836,7 +1849,9 @@ function clearToolRenderCache(value: unknown): void {
 
 /** Fullscreen hit-testing reads the layout recorded by the last render. */
 function rememberMouseLayout(component: object, width: number, children: MouseLayoutEntry[]): void {
-	(component as { mouseLayout?: { width: number; children: MouseLayoutEntry[] } }).mouseLayout = { width, children };
+	const layout = { width, children };
+	if (component instanceof ToolGroupComponent) component.groupMouseLayout = layout;
+	(component as { mouseLayout?: { width: number; children: MouseLayoutEntry[] } }).mouseLayout = layout;
 }
 
 /**
@@ -1966,6 +1981,25 @@ function mouseLayoutTarget(
 ): MouseLayoutEntry | undefined {
 	if (!layout || layout.width !== event.width || event.y < 0 || event.y >= event.height) return undefined;
 	return layout.children.find((entry) => event.y >= entry.top && event.y < entry.top + entry.height);
+}
+
+function dispatchTarget(
+	component: Component,
+	event: TuiMouseEvent,
+	result: TuiMouseEventResult | undefined,
+): TuiMouseDispatchResult | undefined {
+	if (!result) return undefined;
+	return {
+		...result,
+		handled: true,
+		target: {
+			component,
+			originX: event.screenX - event.x,
+			originY: event.screenY - event.y,
+			width: event.width,
+			height: event.height,
+		},
+	};
 }
 
 function toggleGroupedTools(group: any, tools: any[], event?: TuiMouseEvent): { handled: true } | undefined {

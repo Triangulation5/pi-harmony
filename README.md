@@ -1,17 +1,17 @@
-# pi-claude-code-ui
+# Pi Harmony
 
-[![npm](https://img.shields.io/npm/v/pi-claude-code-ui?color=cb6d3d&label=npm)](https://www.npmjs.com/package/pi-claude-code-ui)
-[![license](https://img.shields.io/npm/l/pi-claude-code-ui?color=8a8a8a)](https://www.npmjs.com/package/pi-claude-code-ui)
+[![npm](https://img.shields.io/npm/v/pi-harmony?color=cb6d3d&label=npm)](https://www.npmjs.com/package/pi-harmony)
+[![license](https://img.shields.io/npm/l/pi-harmony?color=8a8a8a)](https://www.npmjs.com/package/pi-harmony)
 
-A Claude Code style interface for [pi](https://github.com/earendil-works/pi). Tool calls fold into one-line summaries, every edit shows a syntax-highlighted diff, the spinner says what pi is doing, and the colors come from your terminal theme.
+A cohesive workspace for [pi](https://github.com/earendil-works/pi), bringing together a polished terminal UI, useful tools, bundled skills, and interactive question workflows.
 
-![pi with pi-claude-code-ui fixing a failing test](https://raw.githubusercontent.com/FammasMaz/pi-cc-tools/master/docs/media/demo.gif)
+![Pi Harmony in use](https://raw.githubusercontent.com/FammasMaz/pi-cc-tools/master/docs/media/demo.gif)
 
 ```bash
-pi install npm:pi-claude-code-ui
+pi install npm:pi-harmony
 ```
 
-Terminal colors need pi 1.4 or newer. The package was called `pi-claude-style-tools` before 1.0.69.
+The UI and tool rendering grew out of the former `pi-claude-code-ui` project. Terminal colors need pi 1.4 or newer.
 
 ## Tool calls
 
@@ -35,7 +35,7 @@ Shell commands that only change files are drawn the same way. `sed -i`, `perl -p
 
 ## Spinner
 
-While a tool runs, the working line names it: `Running npm test...`, `Reading stats.py...`, `Searching for TODO...`, `Waiting for agent: Find edge cases...`. When animated dots are off, a plain `...` remains. While the model thinks, it shows a playful verb instead; verbs fade briefly before switching and typing in with staggered delays. The spinner can use a traveling text shimmer or a two-pulse flash; the flash affects only the verb, with a brighter first pulse and a dimmer second. Toggle animated dots with `/cc-spinner dots on|off|toggle`; choose the default Pi glyph cycle or a Claude-like star-breathing cycle with `/cc-spinner style asterisk|breathing`. The asterisk style matches the spinner cycle from `pi install npm:pi-claude-code-ui`. The collapsed `Thinking...` row keeps its own traveling shimmer while it streams.
+While a tool runs, the working line names it: `Running npm test...`, `Reading stats.py...`, `Searching for TODO...`, `Waiting for agent: Find edge cases...`. When animated dots are off, a plain `...` remains. While the model thinks, it shows a playful verb instead; verbs fade briefly before switching and typing in with staggered delays. The spinner can use a traveling text shimmer or a two-pulse flash; the flash affects only the verb, with a brighter first pulse and a dimmer second. Toggle animated dots with `/cc-spinner dots on|off|toggle`; choose the default Pi glyph cycle or a Claude-like star-breathing cycle with `/cc-spinner style asterisk|breathing`. The asterisk style matches the spinner cycle from Pi Harmony. The collapsed `Thinking...` row keeps its own traveling shimmer while it streams.
 
 ![The working line during a run](https://raw.githubusercontent.com/FammasMaz/pi-cc-tools/master/docs/media/spinner.gif)
 
@@ -85,6 +85,7 @@ With [pi-subagents](https://github.com/tintinweb/pi-subagents), `Agent` calls ge
 - RTK command rewrites appear as a muted `(RTK)` badge on the bash row.
 - `apply_patch` calls show their parsed patch as a diff before they run.
 - The bundled `/skill:web-search-cli` skill searches DuckDuckGo Lite with Python.
+- `rpiv-ask-user-question` adds structured, interactive questionnaires for cases where the agent should ask instead of guess.
 
 ## Commands
 
