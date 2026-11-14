@@ -12,7 +12,7 @@
 // redrawn, and are cached on disk so a resumed session shows them without asking again.
 //
 // Since 1.0.112 the default is "model"; set "bashIntent" to "off"
-// (or run /cc-tools intent off) to get the old, unlabeled behavior back.
+// (or run /tools intent off) to get the old, unlabeled behavior back.
 
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -340,7 +340,7 @@ function onHelperLine(s: LocalIntentState, line: string): void {
 		return;
 	}
 	if (typeof message?.unavailable === "string") {
-		fail(s, `Local bash labels are off: Apple's on-device model is not available (${message.unavailable}). Turn on Apple Intelligence, or use /cc-tools intent model|off.`);
+		fail(s, `Local bash labels are off: Apple's on-device model is not available (${message.unavailable}). Turn on Apple Intelligence, or use /tools intent model|off.`);
 		return;
 	}
 	const command = s.inFlight.get(message?.id);

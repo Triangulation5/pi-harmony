@@ -9,6 +9,7 @@
   "extraToolOutputExpanded": false,
   "groupToolCalls": true,
   "thinkingMode": "live",
+  "thinkingLabel": false,
   "bashOutputMode": "opencode",
   "bashIntent": "model",
   "bashCollapsedLines": 10,

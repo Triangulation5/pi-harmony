@@ -26,7 +26,7 @@ const RESET = "\x1b[0m";
 let CLAUDE_ORANGE = "\x1b[38;2;215;119;87m";
 let STATUS_DIM = "\x1b[38;2;153;153;153m";
 
-// Short TTL so /cc-spinner changes are picked up within ~1s without
+// Short TTL so /spinner changes are picked up within ~1s without
 // re-reading the file on every spinner tick (~170ms).
 type SpinnerSpeed = "slow" | "medium" | "fast";
 type SpinnerStyle = "asterisk" | "breathing";
@@ -47,7 +47,7 @@ let _spinnerSettingsCache: {
     expires: number;
 } | null = null;
 const SPINNER_SETTINGS_TTL_MS = 1_000;
-// Cross-extension bust signal: /cc-spinner in index.ts bumps this counter
+// Cross-extension bust signal: /spinner in index.ts bumps this counter
 // and we drop the cache when it changes.
 const SPINNER_BUST_KEY = Symbol.for("pi-claude-style-tools:spinner-settings-bust");
 let _spinnerLastBust = 0;
@@ -1259,7 +1259,7 @@ export default function (pi: ExtensionAPI) {
             // Session replacement/reload invalidated the captured context.
             return;
         }
-        // Re-derive colors on every tick so /cc-spinner verb/status changes
+        // Re-derive colors on every tick so /spinner verb/status changes
         // take effect within ~250 ms without waiting for the next pi event.
         // applyThemeColors only re-resolves two theme colors, so this is cheap.
         applyThemeColors(activeCtx.ui?.theme);
@@ -1288,7 +1288,7 @@ export default function (pi: ExtensionAPI) {
     function getWorkingMessageIntervalMs(): number {
         const elapsed = Date.now() - (agentStartTime || turnStartTime);
         const tokenCount = outputTokenCount();
-        // Keep ticking once per second even when idle so /cc-spinner changes
+        // Keep ticking once per second even when idle so /spinner changes
         // take effect within ~1s and elapsed-time crossover into the timer-on
         // state still fires close to 30s. syncWorkingMessage short-circuits
         // when the rendered string is unchanged, so the cost is negligible.

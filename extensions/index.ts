@@ -204,7 +204,7 @@ interface SettingsFile {
 	 * every color from the terminal's own palette (Ghostty, Rex, ...), and
 	 * re-reads that palette when the terminal regains focus so same-kind theme
 	 * switches (dark to dark) are picked up too. Set to false, or run
-	 * `/cc-theme terminal off`, to keep the theme chosen in pi's /settings.
+	 * `/theme terminal off`, to keep the theme chosen in pi's /settings.
 	 */
 	terminalTheme?: boolean;
 	/** Pi theme that was active before `terminalTheme` was turned on; restored when it is turned off. */
@@ -243,6 +243,8 @@ interface SettingsFile {
 	 * tool rows they separated merge into one group.
 	 */
 	thinkingMode?: "live" | "full" | "latest";
+	/** Show `∴ Thinking:` above expanded thinking blocks. Off by default. */
+	thinkingLabel?: boolean;
 }
 
 let _settingsCache: { value: SettingsFile; timestamp: number } | null = null;
@@ -271,7 +273,7 @@ function readSettings(): SettingsFile {
 
 // Cross-extension bust signal for spinner.ts — it watches this counter on
 // globalThis and invalidates its settings cache when it changes. Lets
-// /cc-spinner edits take effect on the next 250ms spinner tick instead of
+// /spinner edits take effect on the next 250ms spinner tick instead of
 // waiting for the file-stat TTL.
 const SPINNER_BUST_KEY = Symbol.for("pi-claude-style-tools:spinner-settings-bust");
 function bustSpinnerSettingsCache(): void {
@@ -652,6 +654,10 @@ const THINKING_MODES = ["live", "full", "latest"] as const;
 
 function getThinkingMode(): ThinkingMode {
 	return getMode(readSettings().thinkingMode, THINKING_MODES, "live");
+}
+
+function thinkingLabelEnabled(): boolean {
+	return readSettings().thinkingLabel === true;
 }
 
 function isAssistantThinkingComplete(comp: any, message: any): boolean {
@@ -2257,7 +2263,7 @@ const TOOL_EXECUTION_PATCH_FLAG = Symbol.for("pi-claude-style-tools:patched-tool
 
 // Rendered-output cache for assistant/user/custom message components.
 // Keyed by (width, branch visual epoch, tool background mode). The epoch changes on
-// theme and /cc-theme rebinds; the mode is included because subagent
+// theme and /theme rebinds; the mode is included because subagent
 // (custom-message) framing follows `toolBackgroundMode` via frameToolLikeLines. This avoids
 // re-running the per-line ANSI stripping (applyTerminalCopyZones, normalizeLeadingCheckGlyph,
 // border boxing) on every scroll/expand re-render — the dominant CPU cost on long chats,
@@ -3157,7 +3163,13 @@ class ThinkingParagraph {
 		}
 		const lines = sanitizeRenderedTextBlockLines(md.render(safeWidth - GUTTER_W), safeWidth - GUTTER_W);
 		const displayLines = this.hovered ? lines.map((line) => brightenRenderedLine(line)) : lines;
-		const rendered = displayLines.map((line: string) => `${gutter}${line}`)
+		const label = `${WORKED_LINE_FG}${copySkip("∴ Thinking:")}`;
+		const rendered = [
+			...(thinkingLabelEnabled()
+				? [`${gutter}${this.hovered ? brightenRenderedLine(label) : label}`]
+				: []),
+			...displayLines.map((line: string) => `${gutter}${line}`),
+		]
 			.map((line) => clampLineWidth(line, safeWidth));
 		this.cachedWidth = width;
 		this.cachedHovered = this.hovered;
@@ -3418,7 +3430,7 @@ function patchCustomMessageRender(): void {
 	if (typeof originalRender !== "function") return;
 	proto.render = function patchedCustomMessageRender(width: number) {
 		// Subagent framing follows `toolBackgroundMode` (via frameToolLikeLines), which
-		// can change via /cc-tools or by editing settings.json. Re-sync before the
+		// can change via /tools or by editing settings.json. Re-sync before the
 		// cache check so the mode key reflects the current setting on warm renders too.
 		syncToolBackgroundMode();
 		const cached = messageRenderCacheHit(this, width);
@@ -5208,7 +5220,7 @@ function themeAdaptiveEnabled(): boolean {
 // terminalTheme: pi follows the terminal's own palette (Ghostty, Rex, ...).
 // ---------------------------------------------------------------------------
 
-/** On by default; `terminalTheme: false` (or `/cc-theme terminal off`) turns it off. */
+/** On by default; `terminalTheme: false` (or `/theme terminal off`) turns it off. */
 function terminalThemeEnabled(): boolean {
 	return readSettings().terminalTheme !== false;
 }
@@ -5253,7 +5265,7 @@ function applyTerminalTheme(ctx: any, options: { announce: boolean; reportUnavai
 		if (options.announce) {
 			// Pi renders a resumed session's transcript right after session_start; post the
 			// notice on the next tick so it lands below that history instead of above it.
-			const message = `Theme follows the terminal's colors (was "${previous ?? current}"). /cc-theme terminal off switches back and keeps it.`;
+			const message = `Theme follows the terminal's colors (was "${previous ?? current}"). /theme terminal off switches back and keeps it.`;
 			unrefTimer(setTimeout(() => {
 				try {
 					ctx.ui.notify(message, "info");
@@ -8307,10 +8319,10 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// /cc-tools command — control tool chrome, grouping, and detail level.
+	// /tools command — control tool chrome, grouping, thinking, and detail level.
 	const TOOL_MODES = ["outlines", "transparent", "default"] as const;
 	const TOOL_BOOL_MODES = ["on", "off", "toggle", "status"] as const;
-	const TOOL_SUBCOMMANDS = [...TOOL_MODES, "group", "detail", "thinking", "intent", "status"] as const;
+	const TOOL_SUBCOMMANDS = [...TOOL_MODES, "group", "detail", "thinking", "thinking-label", "intent", "status"] as const;
 	const INTENT_DESCRIPTIONS: Record<string, string> = {
 		off: "No labels on bash rows",
 		model: "The model writes a short purpose with each bash call (adds a field to the bash tool and a line to its instructions; default)",
@@ -8331,12 +8343,13 @@ export default function (pi: ExtensionAPI) {
 			`Tool style: ${toolBackgroundMode}`,
 			`Tool grouping: ${toolGroupingEnabled() ? "on" : "off"}`,
 			`Thinking: ${getThinkingMode()}`,
+			`Thinking label: ${thinkingLabelEnabled() ? "on" : "off"}`,
 			`Bash labels: ${bashIntentMode}`,
 			`Extra detail: ${extraToolOutputExpanded ? "on" : "off"} (${rawKeyHint("ctrl+shift+o", "toggle")})`,
 		].join("\n"), "info");
 	};
-	pi.registerCommand("cc-tools", {
-		description: "Control tool UI: style, grouped rows, thinking, bash labels, and Ctrl+Shift+O extra-detail mode",
+	pi.registerCommand("tools", {
+		description: "Configure tool rows, thinking display, bash labels, and extra output detail",
 		getArgumentCompletions(prefix) {
 			const parts = prefix.trimStart().split(/\s+/);
 			const first = parts[0] ?? "";
@@ -8349,6 +8362,7 @@ export default function (pi: ExtensionAPI) {
 						description:
 							m === "group" ? "Toggle grouped adjacent/concurrent tool rows"
 							: m === "thinking" ? "Thinking display: live (default), full, or latest"
+							: m === "thinking-label" ? "Show a ∴ Thinking: label above expanded thinking"
 							: m === "intent" ? "Purpose labels on bash rows: model (default), local, or off"
 							: m === "detail" ? "Toggle Ctrl+Shift+O extra-detail mode"
 							: m === "status" ? "Show tool UI settings"
@@ -8369,6 +8383,16 @@ export default function (pi: ExtensionAPI) {
 							: m === "full" ? "Thinking always expanded, like stock pi"
 							: m === "latest" ? "Like live, but only the latest message keeps its thinking; tool calls around earlier thinking merge"
 							: "Show the current mode",
+					}));
+			}
+			if (first === "thinking-label") {
+				const second = parts[1] ?? "";
+				return TOOL_BOOL_MODES
+					.filter((mode) => mode.startsWith(second))
+					.map((mode) => ({
+						value: `thinking-label ${mode}`,
+						label: mode,
+						description: mode === "status" ? "Show whether expanded thinking labels are enabled" : "Show or hide the expanded-thinking label",
 					}));
 			}
 			if (first === "intent") {
@@ -8396,7 +8420,7 @@ export default function (pi: ExtensionAPI) {
 			if (sub === "group") {
 				const next = booleanMode(parts[1], toolGroupingEnabled());
 				if (next === undefined) {
-					if (ctx.hasUI) ctx.ui.notify(`Usage: /cc-tools group ${TOOL_BOOL_MODES.join("|")}`, "error");
+					if (ctx.hasUI) ctx.ui.notify(`Usage: /tools group ${TOOL_BOOL_MODES.join("|")}`, "error");
 					return;
 				}
 				if (next === "status") {
@@ -8422,7 +8446,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				if (!(BASH_INTENT_MODES as readonly string[]).includes(arg)) {
-					if (ctx.hasUI) ctx.ui.notify(`Usage: /cc-tools intent ${BASH_INTENT_MODES.join("|")}|status`, "error");
+					if (ctx.hasUI) ctx.ui.notify(`Usage: /tools intent ${BASH_INTENT_MODES.join("|")}|status`, "error");
 					return;
 				}
 				const next = arg as BashIntentMode;
@@ -8446,7 +8470,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				if (!(THINKING_MODES as readonly string[]).includes(arg)) {
-					if (ctx.hasUI) ctx.ui.notify(`Usage: /cc-tools thinking ${THINKING_MODES.join("|")}|status`, "error");
+					if (ctx.hasUI) ctx.ui.notify(`Usage: /tools thinking ${THINKING_MODES.join("|")}|status`, "error");
 					return;
 				}
 				writeSettingsKey("thinkingMode", arg);
@@ -8463,10 +8487,30 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			if (sub === "thinking-label") {
+				const current = thinkingLabelEnabled();
+				const next = booleanMode(parts[1], current);
+				if (next === undefined) {
+					if (ctx.hasUI) ctx.ui.notify("Usage: /tools thinking-label on|off|toggle|status", "error");
+					return;
+				}
+				if (next === "status") {
+					if (ctx.hasUI) ctx.ui.notify(`Expanded thinking label: ${current ? "on" : "off"}`, "info");
+					return;
+				}
+				writeSettingsKey("thinkingLabel", next);
+				applyThinkingModeToChats();
+				if (ctx.hasUI) {
+					requestChatRender(ctx);
+					ctx.ui.notify(`Expanded thinking label: ${next ? "on" : "off"}`, "info");
+				}
+				return;
+			}
+
 			if (sub === "detail" || sub === "extra") {
 				const next = booleanMode(parts[1], extraToolOutputExpanded);
 				if (next === undefined) {
-					if (ctx.hasUI) ctx.ui.notify(`Usage: /cc-tools detail ${TOOL_BOOL_MODES.join("|")}`, "error");
+					if (ctx.hasUI) ctx.ui.notify(`Usage: /tools detail ${TOOL_BOOL_MODES.join("|")}`, "error");
 					return;
 				}
 				if (next === "status") {
@@ -8482,7 +8526,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (!(TOOL_MODES as readonly string[]).includes(sub)) {
-				if (ctx.hasUI) ctx.ui.notify(`Unknown option "${sub}". Try /cc-tools status, /cc-tools thinking live, or /cc-tools group toggle.`, "error");
+				if (ctx.hasUI) ctx.ui.notify(`Unknown option "${sub}". Try /tools status, /tools thinking live, or /tools group toggle.`, "error");
 				return;
 			}
 			toolBackgroundOverride = sub as typeof toolBackgroundMode;
@@ -8495,8 +8539,8 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// /cc-theme command — toggle pi-theme-adaptive coloring at runtime, and
-	// /cc-theme terminal — make pi's theme follow the terminal's palette.
+	// /theme command — toggle pi-theme-adaptive coloring at runtime, and
+	// /theme terminal — make pi's theme follow the terminal's palette.
 	const THEME_MODES = ["on", "off", "toggle", "status", "terminal"] as const;
 	const TERMINAL_MODES = ["on", "off", "toggle", "status"] as const;
 	const handleTerminalTheme = (arg: string, ctx: any): void => {
@@ -8508,8 +8552,8 @@ export default function (pi: ExtensionAPI) {
 			const isDefault = readSettings().terminalTheme === undefined;
 			ctx.ui.notify([
 				`Terminal colors: ${current ? "on" : "off"}${isDefault ? " (default)" : ""} (pi theme "${name}")`,
-				current && previous ? `  /cc-theme terminal off restores "${previous}"` : "",
-				current && name !== SYSTEM_THEME_NAME ? "  pi is not using the system theme right now; /cc-theme terminal on switches it back" : "",
+				current && previous ? `  /theme terminal off restores "${previous}"` : "",
+				current && name !== SYSTEM_THEME_NAME ? "  pi is not using the system theme right now; /theme terminal on switches it back" : "",
 			].filter(Boolean).join("\n"), "info");
 			return;
 		}
@@ -8518,7 +8562,7 @@ export default function (pi: ExtensionAPI) {
 		else if (arg === "off") next = false;
 		else if (arg === "toggle") next = !current;
 		else {
-			if (ctx.hasUI) ctx.ui.notify(`Usage: /cc-theme terminal ${TERMINAL_MODES.join("|")}`, "error");
+			if (ctx.hasUI) ctx.ui.notify(`Usage: /theme terminal ${TERMINAL_MODES.join("|")}`, "error");
 			return;
 		}
 		if (next) {
@@ -8541,8 +8585,8 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 	};
-	pi.registerCommand("cc-theme", {
-		description: "Follow the terminal's colors (terminal on|off), or toggle whether tool chrome / diff colors follow the pi theme",
+	pi.registerCommand("theme", {
+		description: "Match Pi Harmony's colors to the active Pi theme or terminal palette",
 		getArgumentCompletions(prefix) {
 			if (prefix.startsWith("terminal ")) {
 				const second = prefix.slice("terminal ".length);
@@ -8584,7 +8628,7 @@ export default function (pi: ExtensionAPI) {
 				const theme = ctx.ui.theme as any;
 				const themeName = theme?.name ?? "unknown";
 				const state = current ? "on" : "off";
-				const terminalLine = `terminal colors: ${terminalThemeEnabled() ? "on" : "off"} (/cc-theme terminal on|off)`;
+				const terminalLine = `terminal colors: ${terminalThemeEnabled() ? "on" : "off"} (/theme terminal on|off)`;
 				if (raw === "status" && current) {
 					const settings = readSettings();
 					const verbKey = settings.spinnerVerbColor || "borderAccent";
@@ -8635,7 +8679,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// /cc-spinner command — spinner colors, style, speed, dots, and shimmer controls.
+	// /spinner command — spinner colors, style, speed, dots, and shimmer controls.
 	const COMMON_COLOR_KEYS: readonly string[] = [
 		"accent", "borderAccent", "success", "error", "warning",
 		"muted", "dim", "text", "thinkingText",
@@ -8644,8 +8688,8 @@ export default function (pi: ExtensionAPI) {
 		"thinkingLow", "thinkingMedium", "thinkingHigh", "thinkingXhigh",
 		"syntaxKeyword", "syntaxFunction", "syntaxString", "syntaxType",
 	];
-	pi.registerCommand("cc-spinner", {
-		description: "Set spinner colors, style, speed, and dots, or preview current values",
+	pi.registerCommand("spinner", {
+		description: "Customize spinner colors, animation, speed, and shimmer",
 		getArgumentCompletions(prefix) {
 			const subCommands = ["verb", "status", "dots", "speed", "style", "shimmer-direction", "shimmer-style", "shimmer-color", "reset", "preview"];
 			const parts = prefix.split(/\s+/);
@@ -8772,7 +8816,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				if (mode !== "on" && mode !== "off" && mode !== "toggle") {
-					if (ctx.hasUI) ctx.ui.notify("Usage: /cc-spinner dots on|off|toggle|status", "error");
+					if (ctx.hasUI) ctx.ui.notify("Usage: /spinner dots on|off|toggle|status", "error");
 					return;
 				}
 				const enabled = mode === "toggle" ? !animatedDots : mode === "on";
@@ -8789,7 +8833,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				if (mode !== "slow" && mode !== "medium" && mode !== "fast") {
-					if (ctx.hasUI) ctx.ui.notify("Usage: /cc-spinner speed slow|medium|fast|status", "error");
+					if (ctx.hasUI) ctx.ui.notify("Usage: /spinner speed slow|medium|fast|status", "error");
 					return;
 				}
 				writeSettingsKey("spinnerSpeed", mode);
@@ -8805,7 +8849,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				if (mode !== "asterisk" && mode !== "breathing") {
-					if (ctx.hasUI) ctx.ui.notify("Usage: /cc-spinner style asterisk|breathing|status", "error");
+					if (ctx.hasUI) ctx.ui.notify("Usage: /spinner style asterisk|breathing|status", "error");
 					return;
 				}
 				writeSettingsKey("spinnerStyle", mode);
@@ -8821,7 +8865,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				if (mode !== "left" && mode !== "right") {
-					if (ctx.hasUI) ctx.ui.notify("Usage: /cc-spinner shimmer-direction left|right|status", "error");
+					if (ctx.hasUI) ctx.ui.notify("Usage: /spinner shimmer-direction left|right|status", "error");
 					return;
 				}
 				writeSettingsKey("spinnerShimmerDirection", mode === "left" ? "left-to-right" : "right-to-left");
@@ -8837,7 +8881,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				if (mode !== "sweep" && mode !== "flash") {
-					if (ctx.hasUI) ctx.ui.notify("Usage: /cc-spinner shimmer-style sweep|flash|status", "error");
+					if (ctx.hasUI) ctx.ui.notify("Usage: /spinner shimmer-style sweep|flash|status", "error");
 					return;
 				}
 				writeSettingsKey("spinnerShimmerStyle", mode);
@@ -8859,7 +8903,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) {
-					if (ctx.hasUI) ctx.ui.notify("Usage: /cc-spinner shimmer-color #RGB|#RRGGBB|status|reset", "error");
+					if (ctx.hasUI) ctx.ui.notify("Usage: /spinner shimmer-color #RGB|#RRGGBB|status|reset", "error");
 					return;
 				}
 				writeSettingsKey("spinnerShimmerColor", value);
@@ -8869,13 +8913,13 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (sub !== "verb" && sub !== "status") {
-				if (ctx.hasUI) ctx.ui.notify("Usage: /cc-spinner verb|status <key> | style asterisk|breathing|status | speed slow|medium|fast|status | dots on|off|toggle|status | shimmer-direction left|right|status | shimmer-style sweep|flash|status | shimmer-color #RRGGBB|status|reset | reset | preview", "error");
+				if (ctx.hasUI) ctx.ui.notify("Usage: /spinner verb|status <key> | style asterisk|breathing|status | speed slow|medium|fast|status | dots on|off|toggle|status | shimmer-direction left|right|status | shimmer-style sweep|flash|status | shimmer-color #RRGGBB|status|reset | reset | preview", "error");
 				return;
 			}
 
 			const key = parts[1];
 			if (!key) {
-				if (ctx.hasUI) ctx.ui.notify(`Missing color key. Try /cc-spinner preview to see available keys.`, "error");
+				if (ctx.hasUI) ctx.ui.notify("Missing color key. Try /spinner preview to see available keys.", "error");
 				return;
 			}
 
@@ -8898,7 +8942,7 @@ export default function (pi: ExtensionAPI) {
 		intentNoticeUi = ctx.ui;
 		if (localIntentProblem && !localIntentProblemShown) {
 			localIntentProblemShown = true;
-			notifyIntentProblem(`Bash labels: ${localIntentProblem}, so they are off. /cc-tools intent model|off`);
+			notifyIntentProblem(`Bash labels: ${localIntentProblem}, so they are off. /tools intent model|off`);
 		}
 		patchUiNotifications(ctx.ui);
 		patchAgentWidget(ctx.ui);

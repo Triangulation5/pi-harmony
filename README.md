@@ -1,17 +1,22 @@
 # Pi Harmony
 
-[![npm](https://img.shields.io/npm/v/pi-harmony?color=cb6d3d&label=npm)](https://www.npmjs.com/package/pi-harmony)
-[![license](https://img.shields.io/npm/l/pi-harmony?color=8a8a8a)](https://www.npmjs.com/package/pi-harmony)
+A [Pi](https://github.com/earendil-works/pi) package that brings the terminal UI, practical tools, and interactive workflows together.
 
-A cohesive workspace for [pi](https://github.com/earendil-works/pi), bringing together a polished terminal UI, useful tools, bundled skills, and interactive question workflows.
-
-![Pi Harmony in use](https://raw.githubusercontent.com/FammasMaz/pi-cc-tools/master/docs/media/demo.gif)
+![Pi Harmony's terminal UI](https://raw.githubusercontent.com/FammasMaz/pi-cc-tools/master/docs/media/demo.gif)
 
 ```bash
-pi install npm:pi-harmony
+pi install git:github.com/Triangulation5/pi-harmony
 ```
 
-The UI and tool rendering grew out of the former `pi-claude-code-ui` project. Terminal colors need pi 1.4 or newer.
+For local development, install the checkout directly with `pi install /path/to/pi-harmony`.
+
+## What's included
+
+- **A polished terminal UI** — grouped tool calls, syntax-highlighted diffs, labeled bash commands, and a theme-aware spinner.
+- **Structured questions** — the bundled `ask_user_question` tool presents interactive questionnaires when the agent needs your input instead of guessing.
+- **Web search** — `/skill:web-search-cli` searches DuckDuckGo Lite with the bundled Python script when native web search is unavailable.
+
+Terminal colors need pi 1.4 or newer.
 
 ## Tool calls
 
@@ -35,7 +40,7 @@ Shell commands that only change files are drawn the same way. `sed -i`, `perl -p
 
 ## Spinner
 
-While a tool runs, the working line names it: `Running npm test...`, `Reading stats.py...`, `Searching for TODO...`, `Waiting for agent: Find edge cases...`. When animated dots are off, a plain `...` remains. While the model thinks, it shows a playful verb instead; verbs fade briefly before switching and typing in with staggered delays. The spinner can use a traveling text shimmer or a two-pulse flash; the flash affects only the verb, with a brighter first pulse and a dimmer second. Toggle animated dots with `/cc-spinner dots on|off|toggle`; choose the default Pi glyph cycle or a Claude-like star-breathing cycle with `/cc-spinner style asterisk|breathing`. The asterisk style matches the spinner cycle from Pi Harmony. The collapsed `Thinking...` row keeps its own traveling shimmer while it streams.
+While a tool runs, the working line names it: `Running npm test...`, `Reading stats.py...`, `Searching for TODO...`, `Waiting for agent: Find edge cases...`. When animated dots are off, a plain `...` remains. While the model thinks, it shows a playful verb instead; verbs fade briefly before switching and typing in with staggered delays. The spinner can use a traveling text shimmer or a two-pulse flash; the flash affects only the verb, with a brighter first pulse and a dimmer second. Toggle animated dots with `/spinner dots on|off|toggle`; choose the default Pi glyph cycle or a Claude-like star-breathing cycle with `/spinner style asterisk|breathing`. The asterisk style matches the spinner cycle from Pi Harmony. The collapsed `Thinking...` row keeps its own traveling shimmer while it streams.
 
 ![The working line during a run](https://raw.githubusercontent.com/FammasMaz/pi-cc-tools/master/docs/media/spinner.gif)
 
@@ -45,9 +50,9 @@ With labels on, a bash row shows what the command is for instead of the command 
 
 ![Labelled bash rows, and one clicked open to show its command](https://raw.githubusercontent.com/FammasMaz/pi-cc-tools/master/docs/media/bash-labels.gif)
 
-`/cc-tools intent` picks where labels come from:
+`/tools intent` picks where labels come from:
 
-- `model` (default since 1.0.112): the model writes the label as an extra argument of each bash call. This adds a field to the bash tool and a line to the model's instructions. There is no extra request; the label costs a few output tokens on each call. Set `"bashIntent": "off"` (or run `/cc-tools intent off`) to go back to plain commands.
+- `model` (default since 1.0.112): the model writes the label as an extra argument of each bash call. This adds a field to the bash tool and a line to the model's instructions. There is no extra request; the label costs a few output tokens on each call. Set `"bashIntent": "off"` (or run `/tools intent off`) to go back to plain commands.
 - `off`: no labels; rows show the command.
 - `local`: Apple's on-device model writes the label on your Mac, so nothing the model sees changes. It needs macOS 26 or newer on Apple silicon with Apple Intelligence turned on, and the Xcode command line tools for a one-time build of a small helper. The row shows the command until the label arrives, about 0.3 to 0.6 seconds after the command starts. Labels are cached, so a resumed session shows them without asking again.
 
@@ -57,7 +62,7 @@ The choice applies on the next start or after `/reload`, because the model mode 
 
 By default (`live`), thinking is shown while it streams and then collapses to `Thought for 3s`. Click the row to read it again.
 
-`/cc-tools thinking latest` goes further: only the latest message keeps its thinking. Earlier messages drop it, so the tool calls that thinking used to separate merge into one row. This changes only what is drawn; the thinking stays in the session and in the model's context. `/cc-tools thinking full` keeps every thinking block expanded, as stock pi does.
+`/tools thinking latest` goes further: only the latest message keeps its thinking. Earlier messages drop it, so the tool calls that thinking used to separate merge into one row. This changes only what is drawn; the thinking stays in the session and in the model's context. `/tools thinking full` keeps every thinking block expanded, as stock pi does. To label expanded blocks with `∴ Thinking:`, set `"thinkingLabel": true` or run `/tools thinking-label on`.
 
 ![The same session in live and latest thinking modes](https://raw.githubusercontent.com/FammasMaz/pi-cc-tools/master/docs/media/thinking-modes.png)
 
@@ -69,7 +74,7 @@ On pi 1.4 and newer the extension switches pi to its built-in `system` theme, wh
 
 The extension's own colors follow the active theme as well. Diff code uses the theme's syntax colors, diff backgrounds are tinted from the theme's added and removed colors, and connectors keep the same faint contrast on any background.
 
-Your previous theme is saved when the extension switches. `/cc-theme terminal off` restores it and keeps it, and `pi --use-theme <name>` still picks the theme for a single run.
+Your previous theme is saved when the extension switches. `/theme terminal off` restores it and keeps it, and `pi --use-theme <name>` still picks the theme for a single run.
 
 ## Subagents
 
@@ -84,29 +89,28 @@ With [pi-subagents](https://github.com/tintinweb/pi-subagents), `Agent` calls ge
 - LaTeX math in replies is shown with Unicode symbols.
 - RTK command rewrites appear as a muted `(RTK)` badge on the bash row.
 - `apply_patch` calls show their parsed patch as a diff before they run.
-- The bundled `/skill:web-search-cli` skill searches DuckDuckGo Lite with Python.
-- `rpiv-ask-user-question` adds structured, interactive questionnaires for cases where the agent should ask instead of guess.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `/cc-tools` | Show the current tool settings |
-| `/cc-tools outlines`, `transparent`, `default` | Tool row style: rules around each tool, no rules (default), or pi's own backgrounds |
-| `/cc-tools group on`, `off`, `toggle` | Fold consecutive tool calls into one row |
-| `/cc-tools thinking live`, `full`, `latest` | How finished thinking is shown |
-| `/cc-tools intent off`, `model`, `local`, `status` | Where bash labels come from; applies after `/reload` |
-| `/cc-tools detail on`, `off`, `toggle` | Higher preview limits, same as `Ctrl+Shift+O` |
-| `/cc-theme terminal on`, `off`, `status` | Follow the terminal's colors, or go back to your previous theme |
-| `/cc-theme on`, `off`, `toggle`, `status` | Derive the extension's colors from the pi theme, or use a fixed Claude palette |
-| `/cc-spinner preview` | Show the theme colors available for the spinner |
-| `/cc-spinner verb <key>`, `status <key>`, `reset` | Recolor the spinner's verb or its status text |
-| `/cc-spinner dots on`, `off`, `toggle`, `status` | Toggle animated dots after the spinner text (off by default) |
-| `/cc-spinner style asterisk`, `breathing`, `status` | Choose the default Pi glyph cycle or star-breathing spinner style (asterisk by default) |
-| `/cc-spinner speed slow`, `medium`, `fast`, `status` | Change the spinner movement speed (medium by default) |
-| `/cc-spinner shimmer-direction left`, `right`, `status` | Set the shimmer sweep direction |
-| `/cc-spinner shimmer-style sweep`, `flash`, `status` | Set the working-text shimmer (a sweep or double flash) |
-| `/cc-spinner shimmer-color #RGB|#RRGGBB`, `status`, `reset` | Customize the shimmer highlight color |
+| `/tools` | Show and configure tool display settings |
+| `/tools outlines`, `transparent`, `default` | Tool row style: rules around each tool, no rules (default), or Pi's own backgrounds |
+| `/tools group on`, `off`, `toggle` | Fold consecutive tool calls into one row |
+| `/tools thinking live`, `full`, `latest` | Choose how thinking blocks are shown |
+| `/tools thinking-label on`, `off`, `toggle`, `status` | Show `∴ Thinking:` above expanded thinking blocks |
+| `/tools intent off`, `model`, `local`, `status` | Choose the source for bash labels; applies after `/reload` |
+| `/tools detail on`, `off`, `toggle` | Higher preview limits, same as `Ctrl+Shift+O` |
+| `/theme terminal on`, `off`, `status` | Follow the terminal's colors, or restore your previous theme |
+| `/theme on`, `off`, `toggle`, `status` | Derive Pi Harmony's colors from the Pi theme, or use a fixed palette |
+| `/spinner preview` | Show the theme colors available for the spinner |
+| `/spinner verb <key>`, `status <key>`, `reset` | Recolor the spinner's verb or status text |
+| `/spinner dots on`, `off`, `toggle`, `status` | Toggle animated dots after the spinner text (off by default) |
+| `/spinner style asterisk`, `breathing`, `status` | Choose the default Pi glyph cycle or star-breathing spinner style |
+| `/spinner speed slow`, `medium`, `fast`, `status` | Change the spinner movement speed (medium by default) |
+| `/spinner shimmer-direction left`, `right`, `status` | Set the shimmer sweep direction |
+| `/spinner shimmer-style sweep`, `flash`, `status` | Set the working-text shimmer (a sweep or double flash) |
+| `/spinner shimmer-color #RGB|#RRGGBB`, `status`, `reset` | Customize the shimmer highlight color |
 
 Commands that change a setting save it to the settings file, and the change applies right away.
 
@@ -119,6 +123,7 @@ Settings are read from `.pi/settings.json` in the project and from the agent set
   "toolBackground": "transparent",
   "groupToolCalls": true,
   "thinkingMode": "live",
+  "thinkingLabel": false,
   "terminalTheme": true,
   "themeAdaptive": true,
   "readOutputMode": "preview",
@@ -148,6 +153,7 @@ The screenshots on this page use `"toolBackground": "transparent"`.
 | `toolBackground` | `transparent` | `transparent` draws no rules, `outlines` draws a rule above and below each tool (`border` also works), `default` keeps pi's tool backgrounds |
 | `groupToolCalls` | `true` | Fold consecutive tool calls into one row |
 | `thinkingMode` | `live` | `live` collapses finished thinking to `Thought for Xs`, `full` keeps it expanded, `latest` hides it in all but the latest message |
+| `thinkingLabel` | `false` | Show `∴ Thinking:` above expanded thinking blocks; toggle with `/tools thinking-label on|off` |
 | `previewLines` | `8` | Lines in a collapsed preview |
 | `expandedPreviewMaxLines` | `4000` | Line limit when a row is expanded |
 | `extraExpandedPreviewMaxLines` | `12000` | Line limit in `Ctrl+Shift+O` mode |
@@ -182,7 +188,7 @@ The screenshots on this page use `"toolBackground": "transparent"`.
 | `diffColors` | unset | Override individual diff colors |
 | `spinnerVerbColor` | `borderAccent` | Theme color of the spinner's verb |
 | `spinnerStatusColor` | `muted` | Theme color of the spinner's status text |
-| `spinnerAnimatedDots` | `false` | Animate dots after the spinner text; toggle with `/cc-spinner dots on|off|toggle` |
+| `spinnerAnimatedDots` | `false` | Animate dots after the spinner text; toggle with `/spinner dots on|off|toggle` |
 | `spinnerStyle` | `asterisk` | Spinner animation: default Pi glyph cycle or Claude-like star-breathing cycle |
 | `spinnerSpeed` | `medium` | Spinner movement speed: `slow`, `medium` or `fast` |
 | `spinnerShimmerDirection` | `left-to-right` | Shimmer direction for spinner text and collapsed active thinking |
