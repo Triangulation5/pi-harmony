@@ -8,6 +8,10 @@
 - Rebranded the broader Pi workspace as `pi-harmony`.
 - Bundled `rpiv-ask-user-question` and the `web-search-cli` skill with the existing UI and tools.
 
+## 1.0.113 — 2026-11-14
+
+- **Changelog entries no longer repeat on every launch.** The rebrand reset the package version to `1.0.0` while retaining changelog entries through `1.0.112`; Pi therefore kept treating those entries as newer than the installed package version.
+
 ## 1.0.112 — 2026-11-10
 
 > [!WARNING]
