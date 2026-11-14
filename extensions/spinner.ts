@@ -311,6 +311,7 @@ const SPINNER_VERBS = [
     "Cascading",
     "Catapulting",
     "Catalyzing",
+    "Cavorting",
     "Cerebrating",
     "Channeling",
     "Choreographing",
@@ -335,6 +336,7 @@ const SPINNER_VERBS = [
     "Cultivating",
     "Dabbling",
     "Daydreaming",
+    "Dawdling",
     "Debugging",
     "Deciphering",
     "Deconstructing",
@@ -374,6 +376,7 @@ const SPINNER_VERBS = [
     "Frolicking",
     "Frosting",
     "Futzing",
+    "Gamboling",
     "Gallivanting",
     "Galloping",
     "Garnishing",
@@ -388,6 +391,7 @@ const SPINNER_VERBS = [
     "Harmonizing",
     "Hashing",
     "Hatching",
+    "Hobnobbing",
     "Herding",
     "Honing",
     "Hustling",
@@ -416,6 +420,7 @@ const SPINNER_VERBS = [
     "Mapping",
     "Marinating",
     "Meandering",
+    "Merrymaking",
     "Meditating",
     "Metamorphosing",
     "Misting",
@@ -467,6 +472,7 @@ const SPINNER_VERBS = [
     "Roosting",
     "Ruminating",
     "Sautéing",
+    "Sauntering",
     "Scampering",
     "Scheming",
     "Schlepping",
@@ -497,10 +503,12 @@ const SPINNER_VERBS = [
     "Thinking",
     "Thundering",
     "Tinkering",
+    "Tiptoeing",
     "Tomfoolering",
     "Topsy-turvying",
     "Transfiguring",
     "Transmuting",
+    "Trundling",
     "Troubleshooting",
     "Tuning",
     "Twisting",
@@ -518,11 +526,13 @@ const SPINNER_VERBS = [
     "Whirlpooling",
     "Whirring",
     "Whisking",
+    "Whooshing",
     "Wibbling",
     "Wondering",
     "Working",
     "Wrangling",
     "Yammering",
+    "Yodeling",
     "Zapping",
     "Zesting",
     "Zigzagging",
@@ -736,6 +746,15 @@ const SPINNER_VERBS = [
     "Glazing the graphics",
     "Topping with tests",
     "Cherry-picking the commits",
+    "Untangling the cosmic spaghetti",
+    "Teaching the bits to waltz",
+    "Checking the pockets of time",
+    "Listening for the little gears",
+    "Persuading a stubborn semicolon",
+    "Following a suspicious hunch",
+    "Asking the moon for directions",
+    "Finding a home for this thought",
+    "Searching for the plot twist",
 ];
 
 // ---------------------------------------------------------------------------
@@ -743,14 +762,18 @@ const SPINNER_VERBS = [
 // No separate glyph prefix needed.
 // ---------------------------------------------------------------------------
 
+const SHORT_SPINNER_VERBS = SPINNER_VERBS.filter((verb) => !/\s/.test(verb));
+const LONG_SPINNER_VERBS = SPINNER_VERBS.filter((verb) => /\s/.test(verb));
+
 function pickVerb(exclude?: string): string {
-    if (exclude) {
-        for (let tries = 0; tries < 8; tries++) {
-            const verb = SPINNER_VERBS[Math.floor(Math.random() * SPINNER_VERBS.length)];
-            if (verb !== exclude) return verb;
-        }
-    }
-    return SPINNER_VERBS[Math.floor(Math.random() * SPINNER_VERBS.length)];
+    const preferLong = Math.random() < 0.25;
+    const preferred = preferLong ? LONG_SPINNER_VERBS : SHORT_SPINNER_VERBS;
+    const alternate = preferLong ? SHORT_SPINNER_VERBS : LONG_SPINNER_VERBS;
+    const candidates = exclude ? preferred.filter((verb) => verb !== exclude) : preferred;
+    const pool = candidates.length
+        ? candidates
+        : exclude ? alternate.filter((verb) => verb !== exclude) : alternate;
+    return pool[Math.floor(Math.random() * pool.length)];
 }
 
 /** Format elapsed ms as compact duration: 5s, 1m 23s, 1h 2m 3s */
