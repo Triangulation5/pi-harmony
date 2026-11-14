@@ -84,6 +84,7 @@ With [pi-subagents](https://github.com/tintinweb/pi-subagents), `Agent` calls ge
 - LaTeX math in replies is shown with Unicode symbols.
 - RTK command rewrites appear as a muted `(RTK)` badge on the bash row.
 - `apply_patch` calls show their parsed patch as a diff before they run.
+- The bundled `/skill:web-search-cli` skill searches DuckDuckGo Lite with Python.
 
 ## Commands
 

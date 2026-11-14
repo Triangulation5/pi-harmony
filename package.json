@@ -45,6 +45,8 @@
     "extensions/bash-intent.ts",
     "extensions/theme-colors.ts",
     "extensions/terminal-theme.ts",
+    "skills/web-search-cli/SKILL.md",
+    "skills/web-search-cli/scripts/search.py",
     "config/config.example.json",
     "README.md",
     "CHANGELOG.md"
@@ -71,6 +73,9 @@
     "extensions": [
       "./extensions/index.ts",
       "./extensions/spinner.ts"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "devDependencies": {
