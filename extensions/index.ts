@@ -3605,7 +3605,7 @@ function patchUserMessageRender(): void {
 // (pi's default, or one set by another extension) instead of replacing it.
 const PROMPT_EDITOR_FLAG = Symbol.for("pi-claude-style-tools:prompt-marker-editor");
 
-function installPromptMarkerEditor(ctx: any): void {
+export function installPromptMarkerEditor(ctx: any): void {
 	const ui = ctx?.ui;
 	if (typeof ui?.setEditorComponent !== "function" || typeof ui?.getEditorComponent !== "function") return;
 	const previous = ui.getEditorComponent();
@@ -3628,6 +3628,7 @@ function installPromptMarkerEditor(ctx: any): void {
 		ui.setEditorComponent(factory);
 	} catch { /* not interactive */ }
 }
+(globalThis as any).__piInstallPromptMarkerEditor = installPromptMarkerEditor;
 
 function patchAssistantMessages(): void {
 	const proto = AssistantMessageComponent.prototype as any;

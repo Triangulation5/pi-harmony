@@ -7,6 +7,7 @@
 
 - Rebranded the broader Pi workspace as `pi-harmony`.
 - Bundled `rpiv-ask-user-question` and the `web-search-cli` skill with the existing UI and tools.
+- Bundled `pi-vim` for modal editing (INSERT, NORMAL, VISUAL, V-LINE, EX) in the prompt, with full support for Pi Harmony's `❯` prompt marker and theme colors. Toggleable at any time with `/vim on|off|toggle|status` (on by default).
 
 ## 1.0.113 — 2026-11-14
 

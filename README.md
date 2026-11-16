@@ -13,6 +13,7 @@ For local development, install the checkout directly with `pi install /path/to/p
 ## What's included
 
 - **A polished terminal UI** — grouped tool calls, syntax-highlighted diffs, labeled bash commands, and a theme-aware spinner.
+- **Vim modal editor** — the bundled `pi-vim` extension gives Pi's prompt modal editing (INSERT, NORMAL, VISUAL, V-LINE, EX) while preserving Pi Harmony's `❯` prompt marker and theme integration.
 - **Structured questions** — the bundled `ask_user_question` tool presents interactive questionnaires when the agent needs your input instead of guessing.
 - **Web search** — `/skill:web-search-cli` searches DuckDuckGo Lite with the bundled Python script when native web search is unavailable.
 
@@ -82,6 +83,45 @@ With [pi-subagents](https://github.com/tintinweb/pi-subagents), `Agent` calls ge
 
 ![Two agents reviewing a project](https://raw.githubusercontent.com/FammasMaz/pi-cc-tools/master/docs/media/subagents.gif)
 
+## Modal editing (Vim)
+
+Pi Harmony bundles [`pi-vim`](packages/pi-vim) for full Vim-style modal editing directly inside Pi's prompt, engineered to coexist with Pi Harmony's `❯` prompt marker and theme colors.
+
+- **Modes**: Opens in `INSERT` mode by default for normal typing. Hit `Esc` to enter `NORMAL` mode.
+- **Motions & Operators**: Standard motions (`w`, `b`, `e`, `ge`, `0`, `$`, `^`, `f{char}`, `t{char}`, `%`, `gg`, `G`), counts (`3dw`, `ci"`, `ya{`), text objects, and `.` to repeat the last edit.
+- **Visual selection**: Press `v` for character-wise VISUAL mode or `V` for V-LINE mode, with full block highlighting.
+- **Undo / Redo**: Vim-scoped undo with `u` and redo with `Ctrl+R`.
+- **Ex commands**: Hit `:` to run Pi commands and shell shortcuts without losing your in-progress prompt draft (e.g., `:tree`, `:model <name>`, `:!git status`).
+- **Toggle anytime**: Switch Vim mode on or off instantly with `/vim on`, `/vim off`, `/vim toggle` (or just `/vim`), or check status with `/vim status`. Kept on by default.
+- **Prompt marker integration**: Unlike standalone installations where custom editor components overwrite each other, Pi Harmony wraps `pi-vim` so the signature `❯` prompt marker, padding, and border status labels work together seamlessly.
+
+### Vim settings
+
+Vim modal editing is enabled by default. You can customize it under the `piVim` key in `.pi/settings.json` or `~/.pi/agent/settings.json`:
+
+```json
+{
+  "piVim": {
+    "enabled": true,
+    "labelPosition": "bottom-right",
+    "historyNavigation": true,
+    "cursorShape": {
+      "insert": "bar",
+      "normal": "block"
+    }
+  }
+}
+```
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `piVim.enabled` | `true` | Enable or disable Vim modal editing |
+| `piVim.labelPosition` | `bottom-right` | Position of the mode label (`bottom-right` or `top-left`) |
+| `piVim.historyNavigation` | `true` | Expose Pi's prompt history to `k` / `j` at logical edges in Normal mode |
+| `piVim.cursorShape` | `{"insert": "bar", "normal": "block"}` | Hardware cursor shape in Insert and Normal modes |
+| `piVim.modeColors` | unset | Custom theme tokens or ANSI colors for `insert`, `normal`, `visual`, and `ex` modes |
+| `piVim.borderSync` | `{"insert": "host", "normal": "host", ...}` | Paint policy for Pi's input border (`host`, `mode`, or `thinking`) |
+
 ## Smaller things
 
 - Past prompts are a single highlighted line starting with `❯`, and the input line gets the same marker.
@@ -94,6 +134,7 @@ With [pi-subagents](https://github.com/tintinweb/pi-subagents), `Agent` calls ge
 
 | Command | What it does |
 | --- | --- |
+| `/vim` | Toggle Vim modal editing (`on`, `off`, `toggle`, `status`; on by default) |
 | `/tools` | Show and configure tool display settings |
 | `/tools outlines`, `transparent`, `default` | Tool row style: rules around each tool, no rules (default), or Pi's own backgrounds |
 | `/tools group on`, `off`, `toggle` | Fold consecutive tool calls into one row |
@@ -219,3 +260,4 @@ This project builds on the work of:
 - [@heyhuynhgiabuu/pi-diff](https://github.com/buddingnewinsights/pi-diff) by [huynhgiabuu](https://github.com/buddingnewinsights): the Shiki diff renderer with word-level changes in split and unified views
 - [pi-tool-display](https://github.com/MasuRii/pi-tool-display) by [MasuRii](https://github.com/MasuRii): compact tool rows, diff display and output truncation
 - [pi-polish](https://github.com/Pringled/pi-extensions/tree/main/packages/pi-polish) by [Thomas van Dongen](https://github.com/Pringled): the one-sentence tool groups, the activity spinner and the `❯` prompt markers follow its design
+- [pi-vim](https://github.com/lajarre/pi-vim) by [lajarre](https://github.com/lajarre): Vim-style modal editing for Pi's TUI editor
