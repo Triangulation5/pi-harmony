@@ -6,7 +6,7 @@ import { basename, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, Loader } from "@earendil-works/pi-tui";
 
-import { getUserSettingsPath } from "./settings-path.ts";
+import { invalidateSettings, readMergedSettings } from "./settings-store.ts";
 import { renderShimmerText, type ShimmerStyle } from "./shimmer-text.ts";
 import { createSpinnerTextAnimator, type SpinnerTextAnimator } from "./spinner-animation.ts";
 import type { SpawnScheduler } from "./spin-dots.ts";
@@ -72,6 +72,7 @@ function readSpinnerSettings(): {
     if (bust !== _spinnerLastBust) {
         _spinnerLastBust = bust;
         _spinnerSettingsCache = null;
+        invalidateSettings();
     }
     if (_spinnerSettingsCache && _spinnerSettingsCache.expires > now) {
         return _spinnerSettingsCache.value;
@@ -90,32 +91,25 @@ function readSpinnerSettings(): {
     // orange as the glyph on themes like openAntigravity-dark.
     let verbColor = "borderAccent";
     let statusColor = "muted";
-    const paths = [`${process.cwd()}/.pi/settings.json`, getUserSettingsPath()];
-    for (const p of paths) {
-        try {
-            if (!p || !existsSync(p)) continue;
-            const raw = JSON.parse(readFileSync(p, "utf8"));
-            if (raw && typeof raw === "object") {
-                if (raw.themeAdaptive === false) adaptive = false;
-                if (typeof raw.spinnerVerbColor === "string" && raw.spinnerVerbColor.length > 0) verbColor = raw.spinnerVerbColor;
-                if (typeof raw.spinnerStatusColor === "string" && raw.spinnerStatusColor.length > 0) statusColor = raw.spinnerStatusColor;
-                if (typeof raw.spinnerAnimatedDots === "boolean") animatedDots = raw.spinnerAnimatedDots;
-                if (typeof raw.spinnerDotsDisabled === "boolean") dotsDisabled = raw.spinnerDotsDisabled;
-                if (typeof raw.spinnerTips === "boolean") tips = raw.spinnerTips;
-                if (raw.spinnerSpeed === "slow" || raw.spinnerSpeed === "medium" || raw.spinnerSpeed === "fast") speed = raw.spinnerSpeed;
-                if (raw.spinnerStyle === "asterisk" || raw.spinnerStyle === "breathing" || raw.spinnerStyle === "orbit") {
-                    style = raw.spinnerStyle;
-                }
-                if (raw.spinnerShimmerDirection === "left-to-right" || raw.spinnerShimmerDirection === "right-to-left") {
-                    shimmerDirection = raw.spinnerShimmerDirection;
-                }
-                if (raw.spinnerShimmerStyle === "sweep" || raw.spinnerShimmerStyle === "flash" || raw.spinnerShimmerStyle === "sparkle") {
-                    shimmerStyle = raw.spinnerShimmerStyle;
-                }
-                if (typeof raw.spinnerShimmerColor === "string") shimmerColor = raw.spinnerShimmerColor;
-            }
-        } catch { /* ignore */ }
+    // Shared stale-while-revalidate store: no sync disk reads on the spinner tick.
+    const raw = readMergedSettings();
+    if (raw.themeAdaptive === false) adaptive = false;
+    if (typeof raw.spinnerVerbColor === "string" && raw.spinnerVerbColor.length > 0) verbColor = raw.spinnerVerbColor;
+    if (typeof raw.spinnerStatusColor === "string" && raw.spinnerStatusColor.length > 0) statusColor = raw.spinnerStatusColor;
+    if (typeof raw.spinnerAnimatedDots === "boolean") animatedDots = raw.spinnerAnimatedDots;
+    if (typeof raw.spinnerDotsDisabled === "boolean") dotsDisabled = raw.spinnerDotsDisabled;
+    if (typeof raw.spinnerTips === "boolean") tips = raw.spinnerTips;
+    if (raw.spinnerSpeed === "slow" || raw.spinnerSpeed === "medium" || raw.spinnerSpeed === "fast") speed = raw.spinnerSpeed;
+    if (raw.spinnerStyle === "asterisk" || raw.spinnerStyle === "breathing" || raw.spinnerStyle === "orbit") {
+        style = raw.spinnerStyle;
     }
+    if (raw.spinnerShimmerDirection === "left-to-right" || raw.spinnerShimmerDirection === "right-to-left") {
+        shimmerDirection = raw.spinnerShimmerDirection;
+    }
+    if (raw.spinnerShimmerStyle === "sweep" || raw.spinnerShimmerStyle === "flash" || raw.spinnerShimmerStyle === "sparkle") {
+        shimmerStyle = raw.spinnerShimmerStyle;
+    }
+    if (typeof raw.spinnerShimmerColor === "string") shimmerColor = raw.spinnerShimmerColor;
     const value = { adaptive, verbColor, statusColor, animatedDots, dotsDisabled, tips, speed, style, shimmerDirection, shimmerStyle, shimmerColor };
     _spinnerSettingsCache = { value, expires: now + SPINNER_SETTINGS_TTL_MS };
     return value;
@@ -858,6 +852,23 @@ const BUILTIN_ACTION_DEFAULTS: Record<string, string[]> = {
     "tui.altScreen.bottom": ["ctrl+end"],
 };
 
+const USER_KEYBINDINGS_TTL_MS = 60_000;
+let userKeybindingsCache: { value: Record<string, unknown> | undefined; expires: number } | undefined;
+
+/** keybindings.json is only a fallback source, and tips are rare: read it at most once a minute. */
+function readUserKeybindingsFile(): Record<string, unknown> | undefined {
+    const now = Date.now();
+    if (userKeybindingsCache && userKeybindingsCache.expires > now) return userKeybindingsCache.value;
+    let value: Record<string, unknown> | undefined;
+    try {
+        const agentDir = process.env.PI_AGENT_DIR || join(homedir(), ".pi", "agent");
+        const raw = JSON.parse(readFileSync(join(agentDir, "keybindings.json"), "utf-8"));
+        if (raw && typeof raw === "object") value = raw;
+    } catch { /* no user keybindings */ }
+    userKeybindingsCache = { value, expires: now + USER_KEYBINDINGS_TTL_MS };
+    return value;
+}
+
 export function getActionShortcut(action: string, preferPrimary = true): string {
     let keys: string[] | undefined;
     try {
@@ -871,17 +882,9 @@ export function getActionShortcut(action: string, preferPrimary = true): string 
     } catch { /* ignore */ }
 
     if (!keys || keys.length === 0) {
-        try {
-            const agentDir = process.env.PI_AGENT_DIR || join(homedir(), ".pi", "agent");
-            const configPath = join(agentDir, "keybindings.json");
-            if (existsSync(configPath)) {
-                const raw = JSON.parse(readFileSync(configPath, "utf-8"));
-                if (raw && typeof raw === "object" && raw[action]) {
-                    const val = raw[action];
-                    keys = Array.isArray(val) ? val.map(String) : [String(val)];
-                }
-            }
-        } catch { /* ignore */ }
+        const raw = readUserKeybindingsFile();
+        const val = raw?.[action];
+        if (val) keys = Array.isArray(val) ? val.map(String) : [String(val)];
     }
 
     if (!keys || keys.length === 0) {
@@ -974,10 +977,13 @@ export const GENERAL_SPINNER_TIPS: readonly string[] = [
     "Shell commands that only change files render as clean file diffs",
 ];
 
-export const DEFAULT_SPINNER_TIPS: readonly string[] = [
-    ...getKeybindTips(),
-    ...GENERAL_SPINNER_TIPS,
-];
+// Built on first access, so importing this module does no keybinding work at all.
+let defaultTipsCache: string[] | undefined;
+const defaultTips = (): string[] => (defaultTipsCache ??= [...getKeybindTips(), ...GENERAL_SPINNER_TIPS]);
+export const DEFAULT_SPINNER_TIPS: readonly string[] = new Proxy([] as string[], {
+    get: (_target, key) => Reflect.get(defaultTips(), key),
+    has: (_target, key) => Reflect.has(defaultTips(), key),
+});
 
 export function getAvailableTips(pi?: ExtensionAPI): string[] {
     const tips = [...getKeybindTips(), ...GENERAL_SPINNER_TIPS];
@@ -1755,10 +1761,13 @@ export default function (pi: ExtensionAPI) {
         if (ctx?.hasUI !== true) return;
         herdrRootSession = true;
         herdrUpdateSessionRef(ctx);
-        await herdrReportSession((event as any)?.reason);
         // Reload mid-run: isIdle() false means work is still in flight.
         const working = ctx?.isIdle?.() === false;
-        herdrPublishState(working ? "working" : "idle", true);
+        // The socket round trip can take up to ~2s; never hold session start on it.
+        // State still publishes after the session report, in the original order.
+        void herdrReportSession((event as any)?.reason)
+            .catch(() => {})
+            .then(() => herdrPublishState(working ? "working" : "idle", true));
     });
 
     function onThinkingEnd(): void {

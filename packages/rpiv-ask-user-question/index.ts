@@ -19,7 +19,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerAskUserQuestionTool } from "./ask-user-question.ts";
 import { registerAskUserQuestionReconciler } from "./reconcile.ts";
-import { I18N_NAMESPACE } from "./state/i18n-bridge.ts";
+import { activateI18nScope, I18N_NAMESPACE } from "./state/i18n-bridge.ts";
 
 type I18nLoader = {
 	registerLocalesFromDir: (namespace: string, packageUrl: string, options?: { label?: string }) => void;
@@ -32,11 +32,21 @@ type I18nLoader = {
 //
 // The `/loader` subpath is used instead of the SDK entry so the i18n-ui +
 // pi-tui modules are not pulled into our load graph just to register strings.
-try {
-	const sdk = (await import("@juicesharp/rpiv-i18n/loader")) as I18nLoader;
-	sdk.registerLocalesFromDir(I18N_NAMESPACE, import.meta.url, { label: "rpiv-ask-user-question" });
-} catch {
-	// SDK absent — extension still loads with English-only UI.
+//
+// Registration is deferred off the load path (no top-level await): the bridge already
+// falls back to English until the locales land, and `/languages` flips them live, so
+// the tool is registered immediately while the SDK loads in the background.
+const i18nPackageUrl = import.meta.url;
+function registerLocalesInBackground(): void {
+	setImmediate(() => {
+		import("@juicesharp/rpiv-i18n/loader")
+			.then((sdk) => (sdk as I18nLoader).registerLocalesFromDir(I18N_NAMESPACE, i18nPackageUrl, { label: "rpiv-ask-user-question" }))
+			.catch(() => {
+				// SDK absent — extension still loads with English-only UI.
+			})
+			// Locales first, then bind `t` to the live scope.
+			.then(() => activateI18nScope());
+	});
 }
 
 export {
@@ -55,6 +65,7 @@ export {
 } from "./events.ts";
 
 export default function (pi: ExtensionAPI) {
+	registerLocalesInBackground();
 	registerAskUserQuestionTool(pi);
 	registerAskUserQuestionReconciler(pi);
 }

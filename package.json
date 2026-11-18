@@ -23,6 +23,7 @@
     "agent-tools",
     "tui"
   ],
+  "type": "module",
   "license": "MIT",
   "author": "Triangulation5",
   "repository": {
@@ -42,6 +43,7 @@
     "extensions/typewriter.ts",
     "extensions/shimmer-text.ts",
     "extensions/settings-path.ts",
+    "extensions/settings-store.ts",
     "extensions/bash-command.ts",
     "extensions/bash-file-edit.ts",
     "extensions/bash-intent.ts",

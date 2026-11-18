@@ -33,18 +33,22 @@ type I18nSDK = { scope: (namespace: string) => ScopeFn };
 // rpiv-i18n), the dynamic import fails, every t(key, fallback) returns the
 // canonical English literal, and the extension stays online.
 //
-// Top-level await is required so a synchronous `t(...)` call from any
-// downstream module sees the resolved scope; ESM module loading awaits this
-// before evaluating any importer.
-let scopeImpl: ScopeFn;
-try {
-	const sdk = (await import("@juicesharp/rpiv-i18n")) as I18nSDK;
-	scopeImpl = sdk.scope(I18N_NAMESPACE);
-} catch {
-	scopeImpl = (_key, fallback) => fallback;
-}
+// The SDK is loaded in the background (see `activateI18nScope`, called from ../index.ts),
+// never via top-level await: a blocking import here delayed every pi startup. Until it
+// lands, `t` returns the inline English fallback; afterwards it tracks the active locale.
+let scopeImpl: ScopeFn | undefined;
 
-export const t: ScopeFn = scopeImpl;
+export const t: ScopeFn = (key, fallback) => (scopeImpl ? scopeImpl(key, fallback) : fallback);
+
+/** Resolve the live i18n scope. Resolves quietly (English fallbacks) if the SDK is absent. */
+export async function activateI18nScope(): Promise<void> {
+	try {
+		const sdk = (await import("@juicesharp/rpiv-i18n")) as I18nSDK;
+		scopeImpl = sdk.scope(I18N_NAMESPACE);
+	} catch {
+		// SDK absent: keep English fallbacks.
+	}
+}
 
 export function displayLabel(kind: SentinelKind): string {
 	return t(`sentinel.${kind}`, ROW_INTENT_META[kind].label);

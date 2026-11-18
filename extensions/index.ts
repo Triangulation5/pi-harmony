@@ -44,7 +44,16 @@ import {
 	type Component,
 } from "@earendil-works/pi-tui";
 import * as PiTui from "@earendil-works/pi-tui";
-import * as Diff from "diff";
+import { createRequire } from "node:module";
+
+// `diff` is only needed once a diff is actually rendered, so load it on first use
+// instead of at extension load. The proxy keeps every `Diff.fn(...)` call site as is.
+type DiffModule = typeof import("diff");
+const nodeRequire = createRequire(import.meta.url);
+let loadedDiff: DiffModule | undefined;
+const Diff: DiffModule = new Proxy({} as DiffModule, {
+	get: (_target, key) => (loadedDiff ??= nodeRequire("diff") as DiffModule)[key as keyof DiffModule],
+});
 
 // Pi 0.85+ fullscreen mouse types. The 0.79 peer typings do not export them yet.
 interface TuiMouseEvent {
@@ -97,6 +106,7 @@ import {
 } from "./bash-intent.ts";
 import { detectBashFileEdit, type BashFileEdit } from "./bash-file-edit.ts";
 import { getUserSettingsPath } from "./settings-path.ts";
+import { invalidateSettings, readMergedSettings } from "./settings-store.ts";
 import {
 	blendForContrast,
 	mixRgb as mixThemeRgb,
@@ -263,28 +273,9 @@ interface SettingsFile {
 	startupAnimation?: boolean;
 }
 
-let _settingsCache: { value: SettingsFile; timestamp: number } | null = null;
-const SETTINGS_CACHE_TTL_MS = 5_000;
-
+// Stale-while-revalidate: cold read is sync, later reads never block on disk (see settings-store.ts).
 function readSettings(): SettingsFile {
-	const now = Date.now();
-	if (_settingsCache && now - _settingsCache.timestamp < SETTINGS_CACHE_TTL_MS) {
-		return _settingsCache.value;
-	}
-	const cwdPath = `${process.cwd()}/.pi/settings.json`;
-	const homePath = getUserSettingsPath();
-	const merged: SettingsFile = {};
-	for (const path of [cwdPath, homePath]) {
-		try {
-			if (!path || !existsSync(path)) continue;
-			const raw = JSON.parse(readFileSync(path, "utf8"));
-			if (raw && typeof raw === "object") Object.assign(merged, raw as SettingsFile);
-		} catch {
-			// ignore invalid settings files
-		}
-	}
-	_settingsCache = { value: merged, timestamp: now };
-	return merged;
+	return readMergedSettings() as SettingsFile;
 }
 
 const LOADED_RESOURCES_CONTAINER_FLAG = Symbol.for("pi-harmony:loaded-resources-container");
@@ -395,7 +386,7 @@ function bustSpinnerSettingsCache(): void {
 }
 
 function writeSettingsKey(key: string, value: unknown): void {
-	_settingsCache = null; // invalidate cache on write
+	invalidateSettings(); // next read is fresh
 	const path = getUserSettingsPath();
 	const dir = dirname(path);
 	let settings: Record<string, unknown> = {};
@@ -5586,7 +5577,7 @@ function refreshToolBranchDisplaysInState(state: Record<string, unknown> | undef
 }
 
 function refreshAllToolBranchVisuals(ctx: any): void {
-	_settingsCache = null;
+	invalidateSettings();
 	syncToolBackgroundMode();
 	invalidateThemePaletteCache();
 	applyToolBackgroundMode(ctx?.ui?.theme);
@@ -5605,7 +5596,7 @@ function refreshAllToolBranchVisuals(ctx: any): void {
 /** Re-derive borders, branches, diffs, and spinner keys from the active pi theme (no cross-extension deps). */
 function rebindUiChromeToTheme(ctx: any): void {
 	if (!ctx?.hasUI) return;
-	_settingsCache = null;
+	invalidateSettings();
 	syncToolBackgroundMode();
 	const theme = ctx.ui?.theme;
 	invalidateThemePaletteCache();
@@ -9242,10 +9233,22 @@ export default function (pi: ExtensionAPI) {
 		applyThemePaletteIfNeeded(ctx.ui.theme);
 	});
 
+	// Runs on every streamed token: bail out as soon as the (rare) work is known to be
+	// done, and test for non-whitespace with an early-exit regex instead of trimming
+	// (copying) the whole growing message text on each delta.
+	let bashPreviewsClearedForMessage = false;
+	pi.on("message_start", async () => { bashPreviewsClearedForMessage = false; });
 	pi.on("message_update", async (event) => {
+		if (bashPreviewsClearedForMessage) return;
 		const content = (event as any)?.message?.content;
-		const hasText = Array.isArray(content) && content.some((block: any) => block?.type === "text" && typeof block.text === "string" && block.text.trim().length > 0);
-		if (hasText) clearPreservedBashPreviews();
+		if (!Array.isArray(content)) return;
+		for (const block of content) {
+			if (block?.type === "text" && typeof block.text === "string" && /\S/.test(block.text)) {
+				bashPreviewsClearedForMessage = true;
+				clearPreservedBashPreviews();
+				return;
+			}
+		}
 	});
 
 	pi.on("tool_execution_start", async (event) => {
