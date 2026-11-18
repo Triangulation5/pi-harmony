@@ -8435,14 +8435,18 @@ export default function (pi: ExtensionAPI) {
 	registerThinkingLabels(pi);
 	syncExtraToolDetailMode();
 
+	const toggleExtraToolDetail = (ctx: any): void => {
+		setExtraToolDetailMode(!extraToolOutputExpanded);
+		if (ctx.hasUI) {
+			ctx.ui.setToolsExpanded(ctx.ui.getToolsExpanded());
+			ctx.ui.notify(`Extra tool detail: ${extraToolOutputExpanded ? "on" : "off"}`, "info");
+		}
+	};
+
 	pi.registerShortcut("ctrl+shift+o", {
 		description: "Toggle extra tool output detail",
 		handler: async (ctx) => {
-			setExtraToolDetailMode(!extraToolOutputExpanded);
-			if (ctx.hasUI) {
-				ctx.ui.setToolsExpanded(ctx.ui.getToolsExpanded());
-				ctx.ui.notify(`Extra tool detail: ${extraToolOutputExpanded ? "on" : "off"}`, "info");
-			}
+			toggleExtraToolDetail(ctx);
 		},
 	});
 
@@ -9167,6 +9171,34 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (event, ctx) => {
 		clearRtkRewriteState();
 		if (!ctx.hasUI) return;
+
+		// When running inside tmux, ensure modifyOtherKeys mode 2 is requested so extended
+		// keys (Ctrl+Shift+O, Shift+Alt+Enter, Shift+Enter) are forwarded without being stripped.
+		if (Boolean(process.env.TMUX || process.env.TERM?.startsWith("tmux") || process.env.TERM?.startsWith("screen"))) {
+			try {
+				if (process.stdout.isTTY) process.stdout.write("\x1b[>4;2m");
+			} catch {}
+		}
+
+		if (typeof ctx.ui?.onTerminalInput === "function") {
+			ctx.ui.onTerminalInput((data: string) => {
+				// Handle Ctrl+Shift+O across tmux and legacy VT escape formats
+				if (
+					data === "\x1b[111;6u" ||
+					data === "\x1b[111;6:1u" ||
+					data === "\x1b[79;6u" ||
+					data === "\x1b[79;6:1u" ||
+					data === "\x1b[27;6;111~" ||
+					data === "\x1b[27;6;79~" ||
+					data === "\x1b\x0f"
+				) {
+					toggleExtraToolDetail(ctx);
+					return { consume: true };
+				}
+				return undefined;
+			});
+		}
+
 		intentNoticeUi = ctx.ui;
 		if (localIntentProblem && !localIntentProblemShown) {
 			localIntentProblemShown = true;

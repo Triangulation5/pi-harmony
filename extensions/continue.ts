@@ -58,9 +58,16 @@ export default function (pi: ExtensionAPI) {
 	// Hook raw terminal input to handle tmux translation quirks where Shift+Alt+Enter
 	// is emitted as \x1b\n, \x1b\x1b[13;2u, or collapsed to \x1b\r when idle with an empty editor.
 	pi.on("session_start", (_event, ctx) => {
-		if (!ctx.hasUI || !ctx.ui?.onTerminalInput) return;
-
 		const isTmux = isTmuxSession();
+
+		// Prompt tmux to forward extended key combinations (CSI-u / modifyOtherKeys)
+		if (isTmux && process.stdout.isTTY) {
+			try {
+				process.stdout.write("\x1b[>4;2m");
+			} catch {}
+		}
+
+		if (!ctx.hasUI || !ctx.ui?.onTerminalInput) return;
 
 		ctx.ui.onTerminalInput((data) => {
 			const isExplicitShiftAltEnter =
