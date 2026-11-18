@@ -5,7 +5,9 @@ import { Loader } from "@earendil-works/pi-tui";
 import {
 	DEFAULT_SPINNER_TIPS,
 	formatTipLine,
+	getActionShortcut,
 	getAvailableTips,
+	getKeybindTips,
 	pickRandomTip,
 	shouldShowSpinnerTip,
 	SPINNER_TIP_MIN_ELAPSED_MS,
@@ -19,6 +21,9 @@ test("DEFAULT_SPINNER_TIPS includes keybinds, subagents, context, commands, and 
 	// Keybinds (including Ctrl+G requested by user)
 	assert.ok(allTips.includes("Ctrl+G"), "Should include tip about Ctrl+G");
 	assert.ok(allTips.includes("Ctrl+O"), "Should include tip about Ctrl+O");
+	assert.ok(allTips.includes("/hotkeys"), "Should include tip about /hotkeys");
+	assert.ok(!allTips.includes("clear your terminal screen and scrollback"), "Inaccurate Ctrl+L clear tip should be removed");
+	assert.ok(allTips.includes("model selector"), "Ctrl+L should refer to model selector");
 
 	// Subagents
 	assert.ok(allTips.toLowerCase().includes("subagent"), "Should include tip about subagents");
@@ -31,6 +36,20 @@ test("DEFAULT_SPINNER_TIPS includes keybinds, subagents, context, commands, and 
 
 	// Skills
 	assert.ok(allTips.includes("web-search-cli") || allTips.includes("ask_user_question"), "Should include tip about skills");
+});
+
+test("getActionShortcut and getKeybindTips resolve accurate shortcuts", () => {
+	assert.equal(getActionShortcut("app.editor.external"), "Ctrl+G");
+	assert.equal(getActionShortcut("app.tools.expand"), "Ctrl+O");
+	assert.equal(getActionShortcut("app.interrupt"), "Escape");
+	assert.equal(getActionShortcut("app.model.select"), "Ctrl+L");
+	assert.equal(getActionShortcut("tui.input.newLine"), "Shift+Enter");
+
+	const keybindTips = getKeybindTips();
+	assert.ok(keybindTips.some((t) => t.includes("/hotkeys")));
+	assert.ok(keybindTips.some((t) => t.includes("Ctrl+G")));
+	assert.ok(keybindTips.some((t) => t.includes("Ctrl+O")));
+	assert.ok(keybindTips.some((t) => t.includes("model selector")));
 });
 
 test("formatTipLine produces aligned connector format", () => {

@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Loader } from "@earendil-works/pi-tui";
+import { getKeybindings, Loader } from "@earendil-works/pi-tui";
 
 import { getUserSettingsPath } from "./settings-path.ts";
 import { renderShimmerText, type ShimmerStyle } from "./shimmer-text.ts";
@@ -790,16 +790,159 @@ function pickVerb(exclude?: string): string {
     return pool[Math.floor(Math.random() * pool.length)];
 }
 
-export const DEFAULT_SPINNER_TIPS: readonly string[] = [
-    // Keybinds & Prompt Editing
-    "Press Ctrl+G to edit your prompt draft in your external editor",
-    "Press Ctrl+O to expand or collapse tool calls and output rows",
-    "Press Ctrl+Shift+O to toggle high-detail tool output mode",
-    "Press Ctrl+C to cancel an in-progress turn or command",
-    "Press Shift+Enter to insert a newline without submitting",
-    "Use PageUp and PageDown to scroll through chat history",
-    "Press Ctrl+L to clear your terminal screen and scrollback",
+function formatKeyPart(part: string, options: { capitalize?: boolean }): string {
+    const displayPart = process.platform === "darwin" && part.toLowerCase() === "alt" ? "Option" : part;
+    return options.capitalize
+        ? displayPart.charAt(0).toUpperCase() + displayPart.slice(1)
+        : displayPart;
+}
 
+export function formatKeyText(key: string, options: { capitalize?: boolean } = { capitalize: true }): string {
+    return key
+        .split("/")
+        .map((k) =>
+            k
+                .split("+")
+                .map((part) => formatKeyPart(part, options))
+                .join("+")
+        )
+        .join("/");
+}
+
+export function formatKeys(keys: string[], options: { capitalize?: boolean } = { capitalize: true }): string {
+    return keys.length === 0 ? "" : formatKeyText(keys.join("/"), options);
+}
+
+const BUILTIN_ACTION_DEFAULTS: Record<string, string[]> = {
+    "app.editor.external": ["ctrl+g"],
+    "app.tools.expand": ["ctrl+o"],
+    "app.interrupt": ["escape"],
+    "app.clear": ["ctrl+c"],
+    "app.thinking.toggle": ["ctrl+t"],
+    "app.thinking.cycle": ["shift+tab"],
+    "app.model.select": ["ctrl+l"],
+    "app.model.cycleForward": ["ctrl+p"],
+    "app.model.cycleBackward": [
+        process.platform === "win32" || Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
+            ? "alt+p"
+            : "shift+ctrl+p",
+    ],
+    "app.message.copy": ["ctrl+x"],
+    "app.message.followUp": [
+        process.platform === "win32" || Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
+            ? "ctrl+q"
+            : "alt+enter",
+    ],
+    "app.message.dequeue": [
+        process.platform === "win32" || Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
+            ? "alt+q"
+            : "alt+up",
+    ],
+    "tui.input.newLine": ["shift+enter", "ctrl+j"],
+    "tui.editor.undo": [
+        process.platform === "win32"
+            ? "ctrl+z"
+            : Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
+                ? "alt+z"
+                : "ctrl+-",
+    ],
+    "tui.editor.deleteWordBackward": ["ctrl+w", "alt+backspace"],
+    "tui.altScreen.search": [
+        process.platform === "win32" || Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
+            ? "ctrl+f"
+            : "ctrl+shift+f",
+    ],
+    "tui.altScreen.pageUp": ["pageUp"],
+    "tui.altScreen.pageDown": ["pageDown"],
+    "tui.altScreen.top": ["ctrl+home"],
+    "tui.altScreen.bottom": ["ctrl+end"],
+};
+
+export function getActionShortcut(action: string, preferPrimary = true): string {
+    let keys: string[] | undefined;
+    try {
+        const kb = getKeybindings();
+        if (kb && typeof kb.getKeys === "function") {
+            const resolved = kb.getKeys(action as any);
+            if (Array.isArray(resolved) && resolved.length > 0) {
+                keys = resolved as unknown as string[];
+            }
+        }
+    } catch { /* ignore */ }
+
+    if (!keys || keys.length === 0) {
+        try {
+            const agentDir = process.env.PI_AGENT_DIR || join(homedir(), ".pi", "agent");
+            const configPath = join(agentDir, "keybindings.json");
+            if (existsSync(configPath)) {
+                const raw = JSON.parse(readFileSync(configPath, "utf-8"));
+                if (raw && typeof raw === "object" && raw[action]) {
+                    const val = raw[action];
+                    keys = Array.isArray(val) ? val.map(String) : [String(val)];
+                }
+            }
+        } catch { /* ignore */ }
+    }
+
+    if (!keys || keys.length === 0) {
+        keys = BUILTIN_ACTION_DEFAULTS[action];
+    }
+
+    if (!keys || keys.length === 0) {
+        return "";
+    }
+
+    return preferPrimary
+        ? formatKeyText(keys[0], { capitalize: true })
+        : formatKeys(keys, { capitalize: true });
+}
+
+export function getKeybindTips(): string[] {
+    const continueKey = process.platform === "darwin" ? "Shift+Option+Enter" : "Shift+Alt+Enter";
+    const extEditor = getActionShortcut("app.editor.external") || "Ctrl+G";
+    const toolsExpand = getActionShortcut("app.tools.expand") || "Ctrl+O";
+    const interrupt = getActionShortcut("app.interrupt") || "Escape";
+    const clear = getActionShortcut("app.clear") || "Ctrl+C";
+    const newLine = getActionShortcut("tui.input.newLine") || "Shift+Enter";
+    const thinkingToggle = getActionShortcut("app.thinking.toggle") || "Ctrl+T";
+    const thinkingCycle = getActionShortcut("app.thinking.cycle") || "Shift+Tab";
+    const modelSelect = getActionShortcut("app.model.select") || "Ctrl+L";
+    const modelCycleFwd = getActionShortcut("app.model.cycleForward") || "Ctrl+P";
+    const modelCycleBack = getActionShortcut("app.model.cycleBackward") || (process.platform === "win32" ? "Alt+P" : "Shift+Ctrl+P");
+    const followUp = getActionShortcut("app.message.followUp") || (process.platform === "darwin" ? "Option+Enter" : "Alt+Enter");
+    const dequeue = getActionShortcut("app.message.dequeue") || (process.platform === "darwin" ? "Option+Up" : "Alt+Up");
+    const copyMsg = getActionShortcut("app.message.copy") || "Ctrl+X";
+    const searchTranscript = getActionShortcut("tui.altScreen.search") || "Ctrl+Shift+F";
+    const pageUp = getActionShortcut("tui.altScreen.pageUp") || "PageUp";
+    const pageDown = getActionShortcut("tui.altScreen.pageDown") || "PageDown";
+    const topMsg = getActionShortcut("tui.altScreen.top") || "Ctrl+Home";
+    const bottomMsg = getActionShortcut("tui.altScreen.bottom") || "Ctrl+End";
+    const undo = getActionShortcut("tui.editor.undo") || "Ctrl+-";
+
+    return [
+        `Press ${extEditor} to edit your prompt draft in your external editor`,
+        `Press ${toolsExpand} to expand or collapse tool calls and output rows`,
+        "Press Ctrl+Shift+O to toggle high-detail tool output mode",
+        `Press ${continueKey} to continue generating the assistant response`,
+        `Press ${interrupt} to abort streaming or cancel an in-progress response`,
+        `Press ${clear} to clear your prompt editor or exit if already empty`,
+        `Press ${newLine} to insert a newline without submitting`,
+        `Press ${thinkingToggle} to collapse or expand thinking blocks`,
+        `Press ${thinkingCycle} to cycle thinking level (off, minimal, low, medium, high)`,
+        `Press ${modelSelect} to open the interactive model selector`,
+        `Press ${modelCycleFwd} or ${modelCycleBack} to cycle through your configured models`,
+        `Press ${followUp} to queue a follow-up message while the agent is working`,
+        `Press ${dequeue} to restore queued follow-up messages back to the editor`,
+        `Press ${searchTranscript} in fullscreen mode to search the rendered transcript`,
+        `Press ${copyMsg} to copy the last assistant message or active selection`,
+        `Use ${pageUp} and ${pageDown} to scroll through chat history in fullscreen mode`,
+        `Press ${topMsg} or ${bottomMsg} to jump to the start or latest message`,
+        `Press ${undo} to undo your last prompt edit`,
+        "Run /hotkeys to view all active keyboard shortcuts configured for your terminal",
+    ];
+}
+
+export const GENERAL_SPINNER_TIPS: readonly string[] = [
     // Context & Workspace
     "Mention @filename or relative paths to include file context directly",
     "Run /compact when context grows large to preserve your token budget",
@@ -831,8 +974,13 @@ export const DEFAULT_SPINNER_TIPS: readonly string[] = [
     "Shell commands that only change files render as clean file diffs",
 ];
 
+export const DEFAULT_SPINNER_TIPS: readonly string[] = [
+    ...getKeybindTips(),
+    ...GENERAL_SPINNER_TIPS,
+];
+
 export function getAvailableTips(pi?: ExtensionAPI): string[] {
-    const tips = [...DEFAULT_SPINNER_TIPS];
+    const tips = [...getKeybindTips(), ...GENERAL_SPINNER_TIPS];
     try {
         const commands = pi?.getCommands?.();
         if (Array.isArray(commands)) {
