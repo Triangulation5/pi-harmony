@@ -16,6 +16,7 @@ For local development, install the checkout directly with `pi install /path/to/p
 - **Optional Tetris-style startup animation** — off by default. When enabled, colored pieces assemble the Pi logo before the interface appears. Toggle it with `/tools startup on|off|toggle|status`; it is skipped on macOS Terminal.app and in unsupported terminals.
 - **Configurable UI via `/tools`** — toggle startup resource headers (`/tools header`), tool grouping, and extra detail without bloating the root slash command namespace.
 - **Structured questions** — the bundled `ask_user_question` tool presents interactive questionnaires when the agent needs your input instead of guessing.
+- **Continuation shortcut** — press `Shift+Alt+Enter` while the agent is stopped to send a literal `continue` prompt; works reliably both in modern terminals and inside tmux multiplexers.
 - **Web search** — `/skill:web-search-cli` searches DuckDuckGo Lite with the bundled Python script when native web search is unavailable.
 
 Terminal colors need pi 1.4 or newer.
