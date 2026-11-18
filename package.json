@@ -21,7 +21,9 @@
     "spinner",
     "skills",
     "agent-tools",
-    "tui"
+    "tui",
+    "theme",
+    "vague"
   ],
   "type": "module",
   "license": "MIT",
@@ -52,6 +54,7 @@
     "extensions/startup-animation.ts",
     "skills/web-search-cli/SKILL.md",
     "skills/web-search-cli/scripts/search.py",
+    "themes/vague.json",
     "packages/rpiv-ask-user-question/**",
     "config/config.example.json",
     "README.md",
@@ -92,6 +95,9 @@
     ],
     "skills": [
       "./skills"
+    ],
+    "themes": [
+      "./themes"
     ]
   },
   "devDependencies": {

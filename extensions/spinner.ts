@@ -7,6 +7,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, Loader } from "@earendil-works/pi-tui";
 
 import { invalidateSettings, readMergedSettings } from "./settings-store.ts";
+import { rgbFgAnsi, type Rgb } from "./theme-colors.ts";
 import { renderShimmerText, type ShimmerStyle } from "./shimmer-text.ts";
 import { createSpinnerTextAnimator, type SpinnerTextAnimator } from "./spinner-animation.ts";
 import type { SpawnScheduler } from "./spin-dots.ts";
@@ -25,6 +26,7 @@ const RESET = "\x1b[0m";
 // below re-derives them from the active pi theme each tick.
 let CLAUDE_ORANGE = "\x1b[38;2;215;119;87m";
 let STATUS_DIM = "\x1b[38;2;153;153;153m";
+let TIP_DIM = "\x1b[38;2;153;153;153m";
 
 // Short TTL so /spinner changes are picked up within ~1s without
 // re-reading the file on every spinner tick (~170ms).
@@ -86,9 +88,8 @@ function readSpinnerSettings(): {
     let shimmerDirection: ShimmerDirection = "left-to-right";
     let shimmerStyle: ShimmerStyle = "sweep";
     let shimmerColor: string | undefined;
-    // Spinner glyph is still pi's accent. Use borderAccent for the verb so it
-    // feels themed and lively without collapsing into the exact same Claude
-    // orange as the glyph on themes like openAntigravity-dark.
+    // The verb color is also used for the spinner glyph (see patchedUpdateDisplay).
+    // borderAccent is the default; themes can override (vague gets iris, see below).
     let verbColor = "borderAccent";
     let statusColor = "muted";
     // Shared stale-while-revalidate store: no sync disk reads on the spinner tick.
@@ -126,9 +127,28 @@ const _DEFAULT_STATUS_DIM = "\x1b[38;2;153;153;153m";
 let _themeColorsLastAdaptive: boolean | null = null;
 let _themeColorsLastVerbKey: string | null = null;
 let _themeColorsLastStatusKey: string | null = null;
+let _themeColorsLastThemeName: string | null = null;
+// Vague's borderAccent (lilac) is washed out next to its palette; use its
+// magenta (#bb9dbd) for the working line instead. Only applies while the user
+// has not picked their own verb color (non-default spinnerVerbColor wins).
+const VAGUE_VERB_KEY = "#bb9dbd";
+const DEFAULT_VERB_KEY = "borderAccent";
+
+/** Parse "#rgb" / "#rrggbb" into an Rgb, or null. Lets spinner colors name raw palette hexes. */
+function hexToRgb(key: string): Rgb | null {
+    const match = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(key.trim());
+    if (!match) return null;
+    let hex = match[1];
+    if (hex.length === 3) hex = [...hex].map((c) => c + c).join("");
+    const n = Number.parseInt(hex, 16);
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
 
 function resolveThemeColor(theme: any, key: string, fallbackKey: string): string | null {
-    if (!theme || typeof theme.getFgAnsi !== "function") return null;
+    if (!theme) return null;
+    const hex = hexToRgb(key);
+    if (hex) return rgbFgAnsi(theme, hex);
+    if (typeof theme.getFgAnsi !== "function") return null;
     try {
         const v = theme.getFgAnsi(key);
         if (typeof v === "string" && v.length > 0) return v;
@@ -144,19 +164,26 @@ function resolveThemeColor(theme: any, key: string, fallbackKey: string): string
 
 function applyThemeColors(theme: any): void {
     const { adaptive, verbColor, statusColor } = readSpinnerSettings();
+    const themeName = typeof theme?.name === "string" ? theme.name : null;
+    const effectiveVerbColor = themeName === "vague" && verbColor === DEFAULT_VERB_KEY
+        ? VAGUE_VERB_KEY
+        : verbColor;
 
-    // Respond to runtime toggles (themeAdaptive or spinner color key changes)
-    // without restarting pi.
+    // Respond to runtime toggles (themeAdaptive, theme switches, or spinner
+    // color key changes) without restarting pi.
     const settingsChanged = _themeColorsLastAdaptive !== adaptive
-        || _themeColorsLastVerbKey !== verbColor
-        || _themeColorsLastStatusKey !== statusColor;
+        || _themeColorsLastVerbKey !== effectiveVerbColor
+        || _themeColorsLastStatusKey !== statusColor
+        || _themeColorsLastThemeName !== themeName;
     if (settingsChanged) {
         _themeColorsLastAdaptive = adaptive;
-        _themeColorsLastVerbKey = verbColor;
+        _themeColorsLastVerbKey = effectiveVerbColor;
         _themeColorsLastStatusKey = statusColor;
+        _themeColorsLastThemeName = themeName;
         if (!adaptive) {
             CLAUDE_ORANGE = _DEFAULT_CLAUDE_ORANGE;
             STATUS_DIM = _DEFAULT_STATUS_DIM;
+            TIP_DIM = _DEFAULT_STATUS_DIM;
         }
     }
 
@@ -164,10 +191,12 @@ function applyThemeColors(theme: any): void {
     // ctx.ui.theme is Pi's global theme Proxy: the same object before and after
     // /theme or a light/dark switch, so an identity cache never refreshed the
     // spinner colors. Resolving is two map lookups per tick; just do it.
-    const verb = resolveThemeColor(theme, verbColor, "accent");
+    const verb = resolveThemeColor(theme, effectiveVerbColor, "accent");
     if (verb) CLAUDE_ORANGE = verb;
     const status = resolveThemeColor(theme, statusColor, "muted");
     if (status) STATUS_DIM = status;
+    const tip = resolveThemeColor(theme, "dim", "muted");
+    if (tip) TIP_DIM = tip;
 }
 
 // Match OpenBrawd's spinner glyph set, with the final Ghostty frame restored
@@ -228,10 +257,15 @@ function stopLoaderIfUiStopped(loader: any): boolean {
     if (stopLoaderIfUiStopped(this)) return;
     const frames = getLoaderFrames();
     const frame = frames[this.currentFrame % frames.length];
-    const message = typeof this.message === "string" && RAW_ANSI_RE.test(this.message)
+    // The working line arrives pre-colored (raw ANSI). Render the glyph in the
+    // same resolved color as the verb so the "*" and "Cooking..." are one color.
+    // Other indicators (retry, compaction) keep their own spinnerColorFn.
+    const themedMessage = typeof this.message === "string" && RAW_ANSI_RE.test(this.message);
+    const message = themedMessage
         ? this.message
         : this.messageColorFn(this.message);
-    const nextText = `${this.spinnerColorFn(frame)} ${message}`;
+    const glyph = themedMessage ? `${CLAUDE_ORANGE}${frame}${RESET}` : this.spinnerColorFn(frame);
+    const nextText = `${glyph} ${message}`;
     if ((this as any)[LOADER_LAST_TEXT] === nextText) return;
     (this as any)[LOADER_LAST_TEXT] = nextText;
     this.setText(nextText);
@@ -1014,8 +1048,8 @@ export function pickRandomTip(exclude?: string, pi?: ExtensionAPI): string {
     return pool[index];
 }
 
-export function formatTipLine(tip: string, statusDim: string = STATUS_DIM, reset: string = RESET): string {
-    return `  ${statusDim}└ Tip: ${tip}${reset}`;
+export function formatTipLine(tip: string, tipDim: string = TIP_DIM, reset: string = RESET): string {
+    return `  ${tipDim}└ Tip: ${tip}${reset}`;
 }
 
 export const SPINNER_TIP_MIN_ELAPSED_MS = 7_000;
@@ -1336,7 +1370,7 @@ const WORKING_MESSAGE_INTERVAL_MS = 1_000;
  * 63% every TOKEN_EASE_MS, and at least one token, so a large jump takes about a second and a
  * steady stream is followed within a few tokens. Frames only run while the numbers differ.
  */
-const TOKEN_FRAME_MS = 50;
+const TOKEN_FRAME_MS = 125;
 const TOKEN_EASE_MS = 150;
 
 /** The counter's next value: `shown` moved toward `target` after `elapsedMs`, never past it. */
@@ -1354,7 +1388,7 @@ const SPINNER_SHIMMER_MIN_INTERVAL_MS = 22_000;
 const SPINNER_SHIMMER_MAX_INTERVAL_MS = 38_000;
 const SPINNER_SHIMMER_DURATION_MS = 4_200;
 const SPINNER_SHIMMER_FADE_MS = 750;
-const SPINNER_SHIMMER_FRAME_MS = 60;
+const SPINNER_SHIMMER_FRAME_MS = 100;
 
 
 export default function (pi: ExtensionAPI) {
@@ -1460,7 +1494,7 @@ export default function (pi: ExtensionAPI) {
                 currentTipPickedAt = now;
             }
             if (currentTip) {
-                message += `\n${formatTipLine(currentTip, STATUS_DIM, RESET)}`;
+                message += `\n${formatTipLine(currentTip, TIP_DIM, RESET)}`;
             }
         }
         return message;
