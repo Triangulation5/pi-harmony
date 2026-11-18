@@ -6,10 +6,10 @@ import { basename, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Loader } from "@earendil-works/pi-tui";
 
-import { getUserSettingsPath } from "./settings-path";
-import { renderShimmerText, type ShimmerStyle } from "./shimmer-text";
-import { createSpinnerTextAnimator, type SpinnerTextAnimator } from "./spinner-animation";
-import type { SpawnScheduler } from "./spin-dots";
+import { getUserSettingsPath } from "./settings-path.ts";
+import { renderShimmerText, type ShimmerStyle } from "./shimmer-text.ts";
+import { createSpinnerTextAnimator, type SpinnerTextAnimator } from "./spinner-animation.ts";
+import type { SpawnScheduler } from "./spin-dots.ts";
 
 // ---------------------------------------------------------------------------
 // Patch built-in Loader with Claude/OpenBrawd-style glyphs.
@@ -39,6 +39,7 @@ let _spinnerSettingsCache: {
         statusColor: string;
         animatedDots: boolean;
         dotsDisabled: boolean;
+        tips: boolean;
         speed: SpinnerSpeed;
         style: SpinnerStyle;
         shimmerDirection: ShimmerDirection;
@@ -59,6 +60,7 @@ function readSpinnerSettings(): {
     statusColor: string;
     animatedDots: boolean;
     dotsDisabled: boolean;
+    tips: boolean;
     speed: SpinnerSpeed;
     style: SpinnerStyle;
     shimmerDirection: ShimmerDirection;
@@ -77,6 +79,7 @@ function readSpinnerSettings(): {
     let adaptive = true;
     let animatedDots = false;
     let dotsDisabled = false;
+    let tips = true;
     let speed: SpinnerSpeed = "medium";
     let style: SpinnerStyle = "asterisk";
     let shimmerDirection: ShimmerDirection = "left-to-right";
@@ -98,6 +101,7 @@ function readSpinnerSettings(): {
                 if (typeof raw.spinnerStatusColor === "string" && raw.spinnerStatusColor.length > 0) statusColor = raw.spinnerStatusColor;
                 if (typeof raw.spinnerAnimatedDots === "boolean") animatedDots = raw.spinnerAnimatedDots;
                 if (typeof raw.spinnerDotsDisabled === "boolean") dotsDisabled = raw.spinnerDotsDisabled;
+                if (typeof raw.spinnerTips === "boolean") tips = raw.spinnerTips;
                 if (raw.spinnerSpeed === "slow" || raw.spinnerSpeed === "medium" || raw.spinnerSpeed === "fast") speed = raw.spinnerSpeed;
                 if (raw.spinnerStyle === "asterisk" || raw.spinnerStyle === "breathing" || raw.spinnerStyle === "orbit") {
                     style = raw.spinnerStyle;
@@ -112,7 +116,7 @@ function readSpinnerSettings(): {
             }
         } catch { /* ignore */ }
     }
-    const value = { adaptive, verbColor, statusColor, animatedDots, dotsDisabled, speed, style, shimmerDirection, shimmerStyle, shimmerColor };
+    const value = { adaptive, verbColor, statusColor, animatedDots, dotsDisabled, tips, speed, style, shimmerDirection, shimmerStyle, shimmerColor };
     _spinnerSettingsCache = { value, expires: now + SPINNER_SETTINGS_TTL_MS };
     return value;
 }
@@ -786,6 +790,96 @@ function pickVerb(exclude?: string): string {
     return pool[Math.floor(Math.random() * pool.length)];
 }
 
+export const DEFAULT_SPINNER_TIPS: readonly string[] = [
+    // Keybinds & Prompt Editing
+    "Press Ctrl+G to edit your prompt draft in your external editor",
+    "Press Ctrl+O to expand or collapse tool calls and output rows",
+    "Press Ctrl+Shift+O to toggle high-detail tool output mode",
+    "Press Ctrl+C to cancel an in-progress turn or command",
+    "Press Shift+Enter to insert a newline without submitting",
+    "Use PageUp and PageDown to scroll through chat history",
+    "Press Ctrl+L to clear your terminal screen and scrollback",
+
+    // Context & Workspace
+    "Mention @filename or relative paths to include file context directly",
+    "Run /compact when context grows large to preserve your token budget",
+    "Consecutive file reads and shell commands collapse into single rows",
+    "Click any grouped tool call in fullscreen mode to inspect its details",
+    "File edits automatically show syntax-highlighted diffs before running",
+
+    // Subagents & Parallelism
+    "Parallel subagents fold into compact rows and report status live",
+    "Subagents can run tests, explore code, and draft fixes in parallel",
+    "Monitor active and finished subagents in the Agents panel",
+
+    // Commands & UI Configuration
+    "Run /tools to configure tool call grouping, borders, and preview limits",
+    "Run /tools header off to hide startup resource lists for a cleaner start",
+    "Run /tools startup on to enable the Tetris-style Pi logo animation",
+    "Run /tools thinking live|full|latest to change how reasoning blocks display",
+    "Run /tools thinking-label on to show the ∴ Thinking: indicator",
+    "Run /theme to adapt diffs, connectors, and spinners to your terminal theme",
+    "Run /spinner to customize verb colors, animation styles, and shimmers",
+    "Run /spinner style orbit to switch the spinner glyph to circle fills",
+    "Run /spinner shimmer-style sparkle to add a fast shimmer over the verb",
+    "Run /spinner dots disabled to hide the trailing dot suffix completely",
+    "Run /spinner tips off to hide these tips during thinking",
+
+    // Skills & Interactive Workflows
+    "Use /skill:web-search-cli to search the web using DuckDuckGo Lite",
+    "The ask_user_question tool presents interactive questionnaires when input is needed",
+    "Shell commands that only change files render as clean file diffs",
+];
+
+export function getAvailableTips(pi?: ExtensionAPI): string[] {
+    const tips = [...DEFAULT_SPINNER_TIPS];
+    try {
+        const commands = pi?.getCommands?.();
+        if (Array.isArray(commands)) {
+            for (const cmd of commands) {
+                if (!cmd || typeof cmd.name !== "string") continue;
+                if (cmd.source === "skill" || cmd.name.startsWith("skill:")) {
+                    const skillName = cmd.name.startsWith("skill:") ? cmd.name.slice(6) : cmd.name;
+                    if (skillName === "web-search-cli") continue;
+                    const desc = cmd.description ? `: ${cmd.description.slice(0, 50)}` : "";
+                    tips.push(`Installed skill /${cmd.name}${desc}`);
+                } else if (cmd.source === "prompt") {
+                    const desc = cmd.description ? `: ${cmd.description.slice(0, 50)}` : "";
+                    tips.push(`Prompt template /${cmd.name}${desc}`);
+                }
+            }
+        }
+    } catch { /* ignore */ }
+    return tips;
+}
+
+export function pickRandomTip(exclude?: string, pi?: ExtensionAPI): string {
+    const pool = getAvailableTips(pi).filter((t) => t !== exclude);
+    if (pool.length === 0) return DEFAULT_SPINNER_TIPS[0];
+    const index = Math.floor(Math.random() * pool.length);
+    return pool[index];
+}
+
+export function formatTipLine(tip: string, statusDim: string = STATUS_DIM, reset: string = RESET): string {
+    return `  ${statusDim}└ Tip: ${tip}${reset}`;
+}
+
+export const SPINNER_TIP_MIN_ELAPSED_MS = 7_000;
+export const SPINNER_TIP_OCCASIONAL_CHANCE = 0.35;
+
+let _tipEligibilityOverride: boolean | null = null;
+export function setTipEligibilityOverrideForTests(override: boolean | null): void {
+    _tipEligibilityOverride = override;
+}
+
+export function shouldShowSpinnerTip(options: {
+    tipsEnabled: boolean;
+    elapsedMs: number;
+    isEligible: boolean;
+}): boolean {
+    return options.tipsEnabled && options.isEligible && options.elapsedMs >= SPINNER_TIP_MIN_ELAPSED_MS;
+}
+
 /** Format elapsed ms as compact duration: 5s, 1m 23s, 1h 2m 3s */
 // What a running tool is doing, for the working line ("Running npm test...",
 // "Reading stats.py..."). Random verbs stay for the time the model is thinking.
@@ -1119,6 +1213,10 @@ export default function (pi: ExtensionAPI) {
     let completionTimer: ReturnType<typeof setTimeout> | null = null;
     let thoughtStatusTimer: ReturnType<typeof setTimeout> | null = null;
     let currentVerb = "";
+    let currentTip = "";
+    let currentTipPickedAt = 0;
+    let tipTurnEligible = false;
+    const TIP_ROTATION_MS = 20_000;
     // Working-line text animation: typewriter verb switching + optional dots.
     let textAnimator: SpinnerTextAnimator | null = null;
     let spinnerShimmerUntil = 0;
@@ -1199,6 +1297,18 @@ export default function (pi: ExtensionAPI) {
         if (statusParts.length > 0) {
             message += statusText(`${spinnerSettings.dotsDisabled ? "" : " "}(${statusParts.join(" · ")})`);
         }
+        if (shouldShowSpinnerTip({ tipsEnabled: spinnerSettings.tips, elapsedMs: elapsed, isEligible: tipTurnEligible })) {
+            if (!currentTip) {
+                currentTip = pickRandomTip(undefined, pi);
+                currentTipPickedAt = now;
+            } else if (now - currentTipPickedAt >= TIP_ROTATION_MS) {
+                currentTip = pickRandomTip(currentTip, pi);
+                currentTipPickedAt = now;
+            }
+            if (currentTip) {
+                message += `\n${formatTipLine(currentTip, STATUS_DIM, RESET)}`;
+            }
+        }
         return message;
     }
 
@@ -1236,6 +1346,11 @@ export default function (pi: ExtensionAPI) {
         runOutputTokens = 0;
         resetStreamed();
         resetShownTokens();
+        tipTurnEligible = _tipEligibilityOverride !== null
+            ? _tipEligibilityOverride
+            : Math.random() < SPINNER_TIP_OCCASIONAL_CHANCE;
+        currentTip = "";
+        currentTipPickedAt = 0;
     }
 
     function resetShownTokens(): void {
@@ -1301,6 +1416,9 @@ export default function (pi: ExtensionAPI) {
     function getWorkingMessageIntervalMs(): number {
         const elapsed = Date.now() - (agentStartTime || turnStartTime);
         const tokenCount = outputTokenCount();
+        if (tipTurnEligible && elapsed < SPINNER_TIP_MIN_ELAPSED_MS) {
+            return Math.max(250, Math.min(WORKING_MESSAGE_INTERVAL_MS, SPINNER_TIP_MIN_ELAPSED_MS - elapsed + 1));
+        }
         // Keep ticking once per second even when idle so /spinner changes
         // take effect within ~1s and elapsed-time crossover into the timer-on
         // state still fires close to 30s. syncWorkingMessage short-circuits
@@ -1527,6 +1645,13 @@ export default function (pi: ExtensionAPI) {
         turnStartTime = Date.now();
         beginRun(turnStartTime);
         currentVerb = pickVerb();
+        if (_tipEligibilityOverride !== null) {
+            tipTurnEligible = _tipEligibilityOverride;
+        } else if (!agentStartTime || activeTurnId === 1) {
+            tipTurnEligible = Math.random() < SPINNER_TIP_OCCASIONAL_CHANCE;
+        }
+        currentTip = "";
+        currentTipPickedAt = 0;
         startTextAnimator();
         resetStreamed();
         clearCompletionTimer();
@@ -1616,6 +1741,9 @@ export default function (pi: ExtensionAPI) {
 
     pi.on("turn_end", async (_event, ctx) => {
         turnActive = false;
+        tipTurnEligible = false;
+        currentTip = "";
+        currentTipPickedAt = 0;
         activeCtx = ctx;
         applyThemeColors(ctx.ui?.theme);
         const turnId = activeTurnId;
@@ -1656,6 +1784,9 @@ export default function (pi: ExtensionAPI) {
     pi.on("agent_end", async () => {
         turnActive = false;
         agentStartTime = 0;
+        tipTurnEligible = false;
+        currentTip = "";
+        currentTipPickedAt = 0;
         runningTools.clear();
         // Preserve the just-finished "Turn took ..." line. Pi emits agent_end
         // immediately after the final turn, so clearing here made the completion

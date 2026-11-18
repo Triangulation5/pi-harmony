@@ -21,6 +21,7 @@
   "themeAdaptive": true,
   "spinnerAnimatedDots": false,
   "spinnerDotsDisabled": false,
+  "spinnerTips": true,
   "spinnerSpeed": "medium",
   "spinnerStyle": "asterisk",
   "spinnerShimmerDirection": "left-to-right",

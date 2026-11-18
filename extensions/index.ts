@@ -226,6 +226,8 @@ interface SettingsFile {
 	spinnerAnimatedDots?: boolean;
 	/** Hide the spinner's dot suffix entirely. */
 	spinnerDotsDisabled?: boolean;
+	/** Display helpful tips under the spinner during thinking. Defaults to true. */
+	spinnerTips?: boolean;
 	/** Spinner glyph speed: slow, medium (default), or fast. */
 	spinnerSpeed?: "slow" | "medium" | "fast";
 	/** Spinner glyph animation: the default glyph cycle, breathing stars, or orbiting circles. */
@@ -8867,7 +8869,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("spinner", {
 		description: "Customize spinner colors, animation, speed, and shimmer",
 		getArgumentCompletions(prefix) {
-			const subCommands = ["verb", "status", "dots", "speed", "style", "shimmer-direction", "shimmer-style", "shimmer-color", "reset", "preview"];
+			const subCommands = ["verb", "status", "dots", "tips", "speed", "style", "shimmer-direction", "shimmer-style", "shimmer-color", "reset", "preview"];
 			const parts = prefix.split(/\s+/);
 			if (parts.length <= 1) {
 				return subCommands
@@ -8879,6 +8881,7 @@ export default function (pi: ExtensionAPI) {
 							c === "verb" ? "Set the color key used for the spinner verb (e.g. 'Cooking...')"
 							: c === "status" ? "Set the color key used for the spinner status suffix"
 							: c === "dots" ? "Toggle animated dots after the spinner text"
+							: c === "tips" ? "Toggle random tips displayed under the spinner text"
 							: c === "speed" ? "Set the spinner glyph speed"
 							: c === "style" ? "Choose the default glyph cycle, breathing stars, or orbiting circles"
 							: c === "shimmer-direction" ? "Set the shimmer sweep direction"
@@ -8898,6 +8901,18 @@ export default function (pi: ExtensionAPI) {
 						description: mode === "disabled" ? "Hide the dot suffix completely"
 							: mode === "off" ? "Show a static ... suffix"
 							: "Toggle animated dots after the spinner text",
+					}));
+			}
+			if (parts[0]?.toLowerCase() === "tips") {
+				const value = (parts[1] ?? "").toLowerCase();
+				return ["on", "off", "toggle", "status"]
+					.filter((mode) => mode.startsWith(value))
+					.map((mode) => ({
+						value: `tips ${mode}`,
+						label: mode,
+						description: mode === "off" ? "Hide tips under the spinner"
+							: mode === "on" ? "Show random tips under the spinner"
+							: "Toggle tips under the spinner text",
 					}));
 			}
 			if (parts[0]?.toLowerCase() === "speed") {
@@ -8970,11 +8985,11 @@ export default function (pi: ExtensionAPI) {
 			if (!sub || sub === "preview") {
 				if (!ctx.hasUI) return;
 				if (!theme) {
-					ctx.ui.notify(`Spinner verb: ${currentVerb}, status: ${currentStatus}, style=${style}, speed=${speed}, dots=${dotsStatus}, shimmer=${shimmerStyle} ${shimmerDirection} ${shimmerColor} (no theme)`, "info");
+					ctx.ui.notify(`Spinner verb: ${currentVerb}, status: ${currentStatus}, style=${style}, speed=${speed}, dots=${dotsStatus}, tips=${settings.spinnerTips !== false ? "on" : "off"}, shimmer=${shimmerStyle} ${shimmerDirection} ${shimmerColor} (no theme)`, "info");
 					return;
 				}
 				const lines: string[] = [
-					`Current: verb=${currentVerb}, status=${currentStatus}, style=${style}, speed=${speed}, dots=${dotsStatus}`,
+					`Current: verb=${currentVerb}, status=${currentStatus}, style=${style}, speed=${speed}, dots=${dotsStatus}, tips=${settings.spinnerTips !== false ? "on" : "off"}`,
 					`Shimmer: ${shimmerStyle}, ${shimmerDirection}, color=${shimmerColor}`,
 					"",
 					"Preview of common theme keys (pick one for verb or status):",
@@ -9018,6 +9033,24 @@ export default function (pi: ExtensionAPI) {
 				writeSettingsKey("spinnerAnimatedDots", enabled);
 				bustSpinnerSettingsCache();
 				if (ctx.hasUI) ctx.ui.notify(`Spinner animated dots → ${enabled ? "on" : "off"}`, "info");
+				return;
+			}
+
+			if (sub === "tips") {
+				const mode = (parts[1] ?? "status").toLowerCase();
+				const tipsEnabled = settings.spinnerTips !== false;
+				if (mode === "status") {
+					if (ctx.hasUI) ctx.ui.notify(`Spinner tips: ${tipsEnabled ? "on" : "off"}`, "info");
+					return;
+				}
+				if (mode !== "on" && mode !== "off" && mode !== "toggle") {
+					if (ctx.hasUI) ctx.ui.notify("Usage: /spinner tips on|off|toggle|status", "error");
+					return;
+				}
+				const enabled = mode === "toggle" ? !tipsEnabled : mode === "on";
+				writeSettingsKey("spinnerTips", enabled);
+				bustSpinnerSettingsCache();
+				if (ctx.hasUI) ctx.ui.notify(`Spinner tips → ${enabled ? "on" : "off"}`, "info");
 				return;
 			}
 
@@ -9108,7 +9141,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (sub !== "verb" && sub !== "status") {
-				if (ctx.hasUI) ctx.ui.notify("Usage: /spinner verb|status <key> | style asterisk|breathing|orbit|status | speed slow|medium|fast|status | dots on|off|disabled|toggle|status | shimmer-direction left|right|status | shimmer-style sweep|flash|sparkle|status | shimmer-color #RRGGBB|status|reset | reset | preview", "error");
+				if (ctx.hasUI) ctx.ui.notify("Usage: /spinner verb|status <key> | style asterisk|breathing|orbit|status | speed slow|medium|fast|status | dots on|off|disabled|toggle|status | tips on|off|toggle|status | shimmer-direction left|right|status | shimmer-style sweep|flash|sparkle|status | shimmer-color #RRGGBB|status|reset | reset | preview", "error");
 				return;
 			}
 

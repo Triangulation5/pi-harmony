@@ -46,7 +46,7 @@ test("isLoadedResourcesContainer identifies container with resource sections", (
 	const resourcesContainer = new Container();
 	resourcesContainer.addChild(new MockSection("[Skills]", "commit, web-search-cli"));
 	resourcesContainer.addChild(new MockSection("[Prompts]", "/council, /review-loop"));
-	resourcesContainer.addChild(new MockSection("[Extensions]", "spinner.ts, pi-vim"));
+	resourcesContainer.addChild(new MockSection("[Extensions]", "spinner.ts, extensions"));
 	assert.equal(isLoadedResourcesContainer(resourcesContainer), true);
 	assert.equal((resourcesContainer as any)[LOADED_RESOURCES_CONTAINER_FLAG], true);
 });
@@ -55,7 +55,7 @@ test("loadedResourcesContainer renders empty lines when header details are disab
 	const resourcesContainer = new Container();
 	resourcesContainer.addChild(new MockSection("[Skills]", "commit, web-search-cli"));
 	resourcesContainer.addChild(new MockSection("[Prompts]", "/council, /review-loop"));
-	resourcesContainer.addChild(new MockSection("[Extensions]", "spinner.ts, pi-vim"));
+	resourcesContainer.addChild(new MockSection("[Extensions]", "spinner.ts, extensions"));
 
 	// Enabled: renders children
 	setHeaderDetailsOverride(true);

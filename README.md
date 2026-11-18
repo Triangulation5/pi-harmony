@@ -42,7 +42,7 @@ Shell commands that only change files are drawn the same way. `sed -i`, `perl -p
 
 ## Spinner
 
-While a tool runs, the working line names it: `Running npm test...`, `Reading stats.py...`, `Searching for TODO...`, `Waiting for agent: Find edge cases...`. When animated dots are off, a plain `...` remains; `/spinner dots disabled` replaces them with one space. While the model thinks, it shows a playful verb instead; verbs fade briefly before switching and typing in with staggered delays. The spinner can use a traveling text shimmer, a two-pulse flash, or a fast `sparkle` that darts across individual letters with a bright core and dim halo. Toggle animated dots with `/spinner dots on|off|disabled|toggle`; choose the default Pi glyph cycle, a Claude-like star-breathing cycle, or the `orbit` circle-fill cycle (`○ ◎ ◉ ●`) with `/spinner style asterisk|breathing|orbit`. The asterisk style matches the spinner cycle from Pi Harmony. The collapsed `Thinking...` row keeps its own traveling shimmer while it streams.
+While a tool runs, the working line names it: `Running npm test...`, `Reading stats.py...`, `Searching for TODO...`, `Waiting for agent: Find edge cases...`. When animated dots are off, a plain `...` remains; `/spinner dots disabled` replaces them with one space. While the model thinks, it shows a playful verb instead; verbs fade briefly before switching and typing in with staggered delays. The spinner can use a traveling text shimmer, a two-pulse flash, or a fast `sparkle` that darts across individual letters with a bright core and dim halo. Toggle animated dots with `/spinner dots on|off|disabled|toggle`; choose the default Pi glyph cycle, a Claude-like star-breathing cycle, or the `orbit` circle-fill cycle (`○ ◎ ◉ ●`) with `/spinner style asterisk|breathing|orbit`. Helpful tips about keybinds, subagents, context, commands, and installed skills can also appear occasionally under the spinner when the agent has been working for a while (`/spinner tips on|off|toggle`). The asterisk style matches the spinner cycle from Pi Harmony. The collapsed `Thinking...` row keeps its own traveling shimmer while it streams.
 
 ![The working line during a run](https://raw.githubusercontent.com/FammasMaz/pi-cc-tools/master/docs/media/spinner.gif)
 
@@ -133,6 +133,7 @@ You can also configure `"headerDetails": false` (or `"quietStartup": "header"`) 
 | `/spinner preview` | Show the theme colors available for the spinner |
 | `/spinner verb <key>`, `status <key>`, `reset` | Recolor the spinner's verb or status text |
 | `/spinner dots on`, `off`, `disabled`, `toggle`, `status` | Animate dots, show static `...`, or hide the suffix entirely |
+| `/spinner tips on`, `off`, `toggle`, `status` | Toggle random tips displayed under the spinner text (on by default) |
 | `/spinner style asterisk`, `breathing`, `orbit`, `status` | Choose the default, star-breathing, or circle-fill spinner style |
 | `/spinner speed slow`, `medium`, `fast`, `status` | Change the spinner movement speed (medium by default) |
 | `/spinner shimmer-direction left`, `right`, `status` | Set the shimmer sweep direction |
@@ -219,6 +220,7 @@ The screenshots on this page use `"toolBackground": "transparent"`.
 | `spinnerStatusColor` | `muted` | Theme color of the spinner's status text |
 | `spinnerAnimatedDots` | `false` | Animate dots after the spinner text; toggle with `/spinner dots on|off|toggle` |
 | `spinnerDotsDisabled` | `false` | Replace the spinner's dot suffix with one space; `/spinner dots off` keeps static `...` |
+| `spinnerTips` | `true` | Occasionally show tips under the spinner during longer-running turns |
 | `spinnerStyle` | `asterisk` | Spinner animation: default Pi glyph cycle, Claude-like star-breathing cycle, or `orbit` (`○ ◎ ◉ ●`) |
 | `spinnerSpeed` | `medium` | Spinner movement speed: `slow`, `medium` or `fast` |
 | `spinnerShimmerDirection` | `left-to-right` | Shimmer direction for spinner text and collapsed active thinking |
