@@ -44,6 +44,7 @@ import {
 	type Component,
 } from "@earendil-works/pi-tui";
 import * as PiTui from "@earendil-works/pi-tui";
+import * as Diff from "diff";
 
 // Pi 0.85+ fullscreen mouse types. The 0.79 peer typings do not export them yet.
 interface TuiMouseEvent {
@@ -75,7 +76,6 @@ interface TuiMouseDispatchResult extends TuiMouseEventResult {
 }
 type MouseLayoutEntry = { component?: any; height: number; top: number };
 
-import * as Diff from "diff";
 import type { BundledLanguage, BundledTheme } from "shiki";
 
 import {
@@ -83,7 +83,7 @@ import {
 	buildBashPreview,
 	describeBashSource,
 	formatBashDuration,
-} from "./bash-command";
+} from "./bash-command.ts";
 import {
 	BASH_INTENT_MODES,
 	cleanIntentLabel,
@@ -94,9 +94,9 @@ import {
 	requestLocalIntent,
 	watchLocalIntent,
 	type BashIntentMode,
-} from "./bash-intent";
-import { detectBashFileEdit, type BashFileEdit } from "./bash-file-edit";
-import { getUserSettingsPath } from "./settings-path";
+} from "./bash-intent.ts";
+import { detectBashFileEdit, type BashFileEdit } from "./bash-file-edit.ts";
+import { getUserSettingsPath } from "./settings-path.ts";
 import {
 	blendForContrast,
 	mixRgb as mixThemeRgb,
@@ -108,14 +108,14 @@ import {
 	themeAppearance,
 	themeTokenRgb,
 	type ShikiThemeRegistration,
-} from "./theme-colors";
+} from "./theme-colors.ts";
 import {
 	activeThemeName,
 	requestTerminalColorScheme,
 	startFocusResync,
 	SYSTEM_THEME_NAME,
 	systemThemeAvailable,
-} from "./terminal-theme";
+} from "./terminal-theme.ts";
 
 const RESET = "\x1b[0m";
 const TRANSPARENT_BG = "\x1b[49m";
@@ -224,14 +224,16 @@ interface SettingsFile {
 	spinnerStatusColor?: string;
 	/** Animate the spinner's trailing dots. Off by default. */
 	spinnerAnimatedDots?: boolean;
+	/** Hide the spinner's dot suffix entirely. */
+	spinnerDotsDisabled?: boolean;
 	/** Spinner glyph speed: slow, medium (default), or fast. */
 	spinnerSpeed?: "slow" | "medium" | "fast";
-	/** Spinner glyph animation: the default glyph cycle or breathing stars. */
-	spinnerStyle?: "asterisk" | "breathing";
+	/** Spinner glyph animation: the default glyph cycle, breathing stars, or orbiting circles. */
+	spinnerStyle?: "asterisk" | "breathing" | "orbit";
 	/** Direction of spinner and collapsed-thinking shimmer. */
 	spinnerShimmerDirection?: "left-to-right" | "right-to-left";
 	/** Spinner-text shimmer animation: traveling sweep or double flash. */
-	spinnerShimmerStyle?: "sweep" | "flash";
+	spinnerShimmerStyle?: "sweep" | "flash" | "sparkle";
 	/** Optional #RGB/#RRGGBB highlight color for spinner and thinking shimmer. */
 	spinnerShimmerColor?: string;
 	/**
@@ -245,6 +247,18 @@ interface SettingsFile {
 	thinkingMode?: "live" | "full" | "latest";
 	/** Show `∴ Thinking:` above expanded thinking blocks. Off by default. */
 	thinkingLabel?: boolean;
+	/**
+	 * Show or hide startup header resource information ([Skills], [Prompts], [Extensions], [Context]).
+	 * When false (or quietStartup: "header"), suppresses this listing while preserving the logo/version header.
+	 */
+	headerDetails?: boolean;
+	/**
+	 * Pi native quiet startup setting: false (default), "header" (keep logo/hints, hide resource details),
+	 * or true (hide both logo and details).
+	 */
+	quietStartup?: boolean | "header";
+	/** Play the Tetris-style startup animation on a fresh interactive session. */
+	startupAnimation?: boolean;
 }
 
 let _settingsCache: { value: SettingsFile; timestamp: number } | null = null;
@@ -269,6 +283,103 @@ function readSettings(): SettingsFile {
 	}
 	_settingsCache = { value: merged, timestamp: now };
 	return merged;
+}
+
+const LOADED_RESOURCES_CONTAINER_FLAG = Symbol.for("pi-harmony:loaded-resources-container");
+let _headerDetailsOverride: boolean | null = null;
+let _knownLoadedResourcesContainer: any = null;
+
+function headerDetailsEnabled(): boolean {
+	if (_headerDetailsOverride !== null) return _headerDetailsOverride;
+	const settings = readSettings();
+	if (settings.headerDetails !== undefined) {
+		return settings.headerDetails !== false;
+	}
+	if (settings.quietStartup !== undefined) {
+		return settings.quietStartup === false;
+	}
+	return true;
+}
+
+function isResourceSectionLine(line: string): boolean {
+	const plain = stripAnsi(line).trim();
+	return plain === "[Skills]"
+		|| plain === "[Prompts]"
+		|| plain === "[Extensions]"
+		|| plain === "[Context]"
+		|| plain === "[Skill warnings]"
+		|| plain === "[Prompt conflicts]"
+		|| plain === "[Extension issues]"
+		|| plain === "[Theme conflicts]";
+}
+
+function isLoadedResourcesContainer(container: any): boolean {
+	if (!container || !Array.isArray(container.children) || container.children.length === 0) return false;
+	if (container[LOADED_RESOURCES_CONTAINER_FLAG] !== undefined) {
+		return container[LOADED_RESOURCES_CONTAINER_FLAG];
+	}
+	for (const child of container.children) {
+		if (!child || typeof child.render !== "function") continue;
+		try {
+			const lines = child.render(80);
+			if (Array.isArray(lines) && lines.length > 0 && isResourceSectionLine(lines[0])) {
+				container[LOADED_RESOURCES_CONTAINER_FLAG] = true;
+				_knownLoadedResourcesContainer = container;
+				return true;
+			}
+		} catch { /* ignore */ }
+	}
+	return false;
+}
+
+const HEADER_MODES = ["on", "off", "toggle", "status"] as const;
+
+async function handleHeaderCommand(arg: string | undefined, ctx: any): Promise<void> {
+	const current = headerDetailsEnabled();
+	const raw = (arg || "").trim().toLowerCase();
+	if (raw === "status") {
+		if (ctx?.hasUI) {
+			const isDefault = readSettings().headerDetails === undefined && readSettings().quietStartup === undefined;
+			ctx.ui.notify([
+				`Header details: ${current ? "on" : "off"}${isDefault ? " (default)" : ""} (showing [Skills], [Prompts], [Extensions])`,
+				`  Use /tools header on|off|toggle to switch`,
+				`  Pi logo and keybinding hints are preserved when off`,
+			].join("\n"), "info");
+		}
+		return;
+	}
+
+	let next: boolean;
+	if (!raw || raw === "toggle") {
+		next = !current;
+	} else if (raw === "on") {
+		next = true;
+	} else if (raw === "off") {
+		next = false;
+	} else {
+		if (ctx?.hasUI) ctx.ui.notify(`Usage: /tools header ${HEADER_MODES.join("|")}`, "error");
+		return;
+	}
+
+	_headerDetailsOverride = next;
+	writeSettingsKey("headerDetails", next);
+	writeSettingsKey("quietStartup", next ? false : "header");
+
+	if (ctx?.hasUI) {
+		const container = _knownLoadedResourcesContainer;
+		if (next && (!container || container.children.length === 0) && typeof ctx.reload === "function") {
+			try {
+				await ctx.reload();
+			} catch { /* ignore */ }
+		} else {
+			ctx.ui.invalidate?.();
+			ctx.ui.requestRender?.();
+		}
+		ctx.ui.notify(
+			`Header details: ${next ? "on" : "off"}${next ? " — showing [Skills], [Prompts], [Extensions]" : " — hiding [Skills], [Prompts], [Extensions] (logo preserved)"}`,
+			"info",
+		);
+	}
 }
 
 // Cross-extension bust signal for spinner.ts — it watches this counter on
@@ -1664,6 +1775,15 @@ function patchContainerParentTracking(): void {
 			component[COMPONENT_PARENT] = this;
 			component[ADD_SEQ_KEY] = ++addSequence;
 		}
+		if (component && typeof component.render === "function") {
+			try {
+				const lines = component.render(80);
+				if (Array.isArray(lines) && lines.length > 0 && isResourceSectionLine(lines[0])) {
+					this[LOADED_RESOURCES_CONTAINER_FLAG] = true;
+					_knownLoadedResourcesContainer = this;
+				}
+			} catch { /* ignore */ }
+		}
 		maybeGroupToolComponent(this, component);
 		maybeMergeConsecutiveThinkingMessages(this);
 		if (isAssistantMessageComponent(component)) supersedeEarlierAssistantMessages(this, component);
@@ -1712,6 +1832,12 @@ function patchGlobalToolBorders(): void {
 
 	const originalRender = proto.render;
 	proto.render = function patchedContainerRender(width: number): string[] {
+		if (this[LOADED_RESOURCES_CONTAINER_FLAG] || isLoadedResourcesContainer(this)) {
+			if (!headerDetailsEnabled()) {
+				(this as { mouseLayout?: unknown }).mouseLayout = { width, children: [] };
+				return [];
+			}
+		}
 		maybeMergeConsecutiveThinkingMessages(this);
 		if (isToolExecutionLike(this)) {
 			const cached = (this as any)[TOOL_RENDER_CACHE];
@@ -3512,12 +3638,12 @@ const USER_PROMPT_MARK = "❯";
 const USER_MESSAGE_PAD = 3;
 
 /** Background escape for the prompt band, or "" when the theme has no distinct userMessageBg. */
-function userMessageBandAnsi(): string {
-	const theme = getGlobalPiTheme();
-	const band = themeTokenRgb(theme, "userMessageBg");
-	const terminal = terminalDefaultColors(theme)?.background;
+function userMessageBandAnsi(theme?: any): string {
+	const t = theme ?? getGlobalPiTheme();
+	const band = themeTokenRgb(t, "userMessageBg");
+	const terminal = terminalDefaultColors(t)?.background;
 	if (!band || (terminal && rgbToHex(band) === rgbToHex(terminal))) return "";
-	return rgbBgAnsi(theme, band);
+	return rgbBgAnsi(t, band);
 }
 
 function markUserPromptLine(line: string, copyMarked = false): string {
@@ -3593,8 +3719,8 @@ function patchUserMessageRender(): void {
 		// Drop the top and bottom padding rows: one compact band.
 		let body = (lines.length > 2 ? lines.slice(1, -1) : lines).map(cleanUserMessageLine);
 		if (!padded) body = body.map((line) => line.replace(/^((?:\x1b\[[0-9;]*m)*)/, "$1  "));
-		body = body.map((line, index) => (index === 0 ? markUserPromptLine(line, true) : copySkipUserPad(line)));
 		const band = userMessageBandAnsi();
+		body = body.map((line, index) => (index === 0 ? markUserPromptLine(line, true) : copySkipUserPad(line)));
 		const rendered = body.map((line) => withUserBand(line, safeWidth, band));
 		return storeMessageRenderCache(this, width, applyTerminalCopyZones(rendered));
 	};
@@ -3605,7 +3731,7 @@ function patchUserMessageRender(): void {
 // (pi's default, or one set by another extension) instead of replacing it.
 const PROMPT_EDITOR_FLAG = Symbol.for("pi-claude-style-tools:prompt-marker-editor");
 
-export function installPromptMarkerEditor(ctx: any): void {
+function installPromptMarkerEditor(ctx: any): void {
 	const ui = ctx?.ui;
 	if (typeof ui?.setEditorComponent !== "function" || typeof ui?.getEditorComponent !== "function") return;
 	const previous = ui.getEditorComponent();
@@ -3615,8 +3741,7 @@ export function installPromptMarkerEditor(ctx: any): void {
 		if (typeof editor?.render !== "function") return editor;
 		const render = editor.render.bind(editor);
 		editor.render = (width: number) => {
-			// Every render: pi re-applies the editorPaddingX setting after creation.
-			if ((editor.paddingX ?? 0) < USER_MESSAGE_PAD) editor.paddingX = USER_MESSAGE_PAD;
+			if ((editor.paddingX ?? 0) !== USER_MESSAGE_PAD) editor.paddingX = USER_MESSAGE_PAD;
 			const lines: string[] = render(width);
 			if (Array.isArray(lines) && lines.length > 1) lines[1] = markUserPromptLine(lines[1]);
 			return lines;
@@ -3628,7 +3753,6 @@ export function installPromptMarkerEditor(ctx: any): void {
 		ui.setEditorComponent(factory);
 	} catch { /* not interactive */ }
 }
-(globalThis as any).__piInstallPromptMarkerEditor = installPromptMarkerEditor;
 
 function patchAssistantMessages(): void {
 	const proto = AssistantMessageComponent.prototype as any;
@@ -8323,7 +8447,17 @@ export default function (pi: ExtensionAPI) {
 	// /tools command — control tool chrome, grouping, thinking, and detail level.
 	const TOOL_MODES = ["outlines", "transparent", "default"] as const;
 	const TOOL_BOOL_MODES = ["on", "off", "toggle", "status"] as const;
-	const TOOL_SUBCOMMANDS = [...TOOL_MODES, "group", "detail", "thinking", "thinking-label", "intent", "status"] as const;
+	const TOOL_SUBCOMMANDS = [
+		...TOOL_MODES,
+		"group",
+		"detail",
+		"thinking",
+		"thinking-label",
+		"intent",
+		"header",
+		"startup",
+		"status",
+	] as const;
 	const INTENT_DESCRIPTIONS: Record<string, string> = {
 		off: "No labels on bash rows",
 		model: "The model writes a short purpose with each bash call (adds a field to the bash tool and a line to its instructions; default)",
@@ -8347,6 +8481,8 @@ export default function (pi: ExtensionAPI) {
 			`Thinking label: ${thinkingLabelEnabled() ? "on" : "off"}`,
 			`Bash labels: ${bashIntentMode}`,
 			`Extra detail: ${extraToolOutputExpanded ? "on" : "off"} (${rawKeyHint("ctrl+shift+o", "toggle")})`,
+			`Header details: ${headerDetailsEnabled() ? "on" : "off"} (/tools header on|off|toggle)`,
+			`Startup animation: ${readSettings().startupAnimation === true ? "on" : "off"} (/tools startup on|off|toggle)`,
 		].join("\n"), "info");
 	};
 	pi.registerCommand("tools", {
@@ -8365,11 +8501,23 @@ export default function (pi: ExtensionAPI) {
 							: m === "thinking" ? "Thinking display: live (default), full, or latest"
 							: m === "thinking-label" ? "Show a ∴ Thinking: label above expanded thinking"
 							: m === "intent" ? "Purpose labels on bash rows: model (default), local, or off"
+							: m === "header" ? "Show or hide startup header details ([Skills], [Prompts], [Extensions])"
+							: m === "startup" ? "Play or skip the Tetris startup animation"
 							: m === "detail" ? "Toggle Ctrl+Shift+O extra-detail mode"
 							: m === "status" ? "Show tool UI settings"
 							: m === "outlines" ? "Horizontal rules around each tool"
 							: m === "transparent" ? "No borders or backgrounds (default)"
 							: "Pi built-in tool backgrounds",
+					}));
+			}
+			if (first === "header") {
+				const second = parts[1] ?? "";
+				return HEADER_MODES
+					.filter((m) => m.startsWith(second))
+					.map((m) => ({
+						value: `header ${m}`,
+						label: m,
+						description: `${m} startup header details ([Skills], [Prompts], [Extensions])`,
 					}));
 			}
 			if (first === "thinking") {
@@ -8523,6 +8671,33 @@ export default function (pi: ExtensionAPI) {
 					ctx.ui.setToolsExpanded(ctx.ui.getToolsExpanded());
 					ctx.ui.notify(`Extra tool detail: ${extraToolOutputExpanded ? "on" : "off"}`, "info");
 				}
+				return;
+			}
+
+			if (sub === "header") {
+				await handleHeaderCommand(parts[1], ctx);
+				return;
+			}
+
+			if (sub === "startup") {
+				const raw = (parts[1] || "toggle").toLowerCase();
+				const current = readSettings().startupAnimation === true;
+				const next =
+					raw === "status" ? undefined
+					: raw === "on" ? true
+					: raw === "off" ? false
+					: raw === "" || raw === "toggle" ? !current
+					: undefined;
+				if (next === undefined) {
+					if (raw === "status") {
+						ctx.ui.notify(`Startup animation: ${current ? "on" : "off"} (/tools startup on|off|toggle)`, "info");
+					} else {
+						ctx.ui.notify("Usage: /tools startup on|off|toggle|status", "error");
+					}
+					return;
+				}
+				writeSettingsKey("startupAnimation", next);
+				ctx.ui.notify(`Startup animation: ${next ? "on" : "off"} (takes effect on the next start)`, "info");
 				return;
 			}
 
@@ -8705,9 +8880,9 @@ export default function (pi: ExtensionAPI) {
 							: c === "status" ? "Set the color key used for the spinner status suffix"
 							: c === "dots" ? "Toggle animated dots after the spinner text"
 							: c === "speed" ? "Set the spinner glyph speed"
-							: c === "style" ? "Choose the default glyph cycle or breathing stars"
+							: c === "style" ? "Choose the default glyph cycle, breathing stars, or orbiting circles"
 							: c === "shimmer-direction" ? "Set the shimmer sweep direction"
-							: c === "shimmer-style" ? "Choose a traveling sweep or double flash on spinner text"
+							: c === "shimmer-style" ? "Choose a sweep, double flash, or fast sparkle on spinner text"
 							: c === "shimmer-color" ? "Set the shimmer highlight color"
 							: c === "reset" ? "Reset both verb and status to defaults (borderAccent, muted)"
 							: "Preview every theme color key with its current sample",
@@ -8715,9 +8890,15 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (parts[0]?.toLowerCase() === "dots") {
 				const value = (parts[1] ?? "").toLowerCase();
-				return ["on", "off", "toggle", "status"]
+				return ["on", "off", "disabled", "toggle", "status"]
 					.filter((mode) => mode.startsWith(value))
-					.map((mode) => ({ value: `dots ${mode}`, label: mode, description: "Animated dots are off by default" }));
+					.map((mode) => ({
+						value: `dots ${mode}`,
+						label: mode,
+						description: mode === "disabled" ? "Hide the dot suffix completely"
+							: mode === "off" ? "Show a static ... suffix"
+							: "Toggle animated dots after the spinner text",
+					}));
 			}
 			if (parts[0]?.toLowerCase() === "speed") {
 				const value = (parts[1] ?? "").toLowerCase();
@@ -8727,7 +8908,7 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (parts[0]?.toLowerCase() === "style") {
 				const value = (parts[1] ?? "").toLowerCase();
-				return ["asterisk", "breathing", "status"]
+				return ["asterisk", "breathing", "orbit", "status"]
 					.filter((mode) => mode.startsWith(value))
 					.map((mode) => ({ value: `style ${mode}`, label: mode, description: "Choose the spinner animation style" }));
 			}
@@ -8739,7 +8920,7 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (parts[0]?.toLowerCase() === "shimmer-style") {
 				const value = (parts[1] ?? "").toLowerCase();
-				return ["sweep", "flash", "status"]
+				return ["sweep", "flash", "sparkle", "status"]
 					.filter((mode) => mode.startsWith(value))
 					.map((mode) => ({ value: `shimmer-style ${mode}`, label: mode, description: "Choose the spinner-text shimmer animation" }));
 			}
@@ -8770,24 +8951,30 @@ export default function (pi: ExtensionAPI) {
 			const currentVerb = settings.spinnerVerbColor || "borderAccent";
 			const currentStatus = settings.spinnerStatusColor || "muted";
 			const animatedDots = settings.spinnerAnimatedDots === true;
+			const dotsDisabled = settings.spinnerDotsDisabled === true;
+			const dotsStatus = dotsDisabled ? "disabled" : animatedDots ? "on" : "off";
 			const speed = settings.spinnerSpeed === "slow" || settings.spinnerSpeed === "fast"
 				? settings.spinnerSpeed
 				: "medium";
-			const style = settings.spinnerStyle === "breathing" ? "breathing" : "asterisk";
+			const style = settings.spinnerStyle === "breathing" || settings.spinnerStyle === "orbit"
+				? settings.spinnerStyle
+				: "asterisk";
 			const shimmerDirection = settings.spinnerShimmerDirection === "right-to-left"
 				? "right-to-left"
 				: "left-to-right";
-			const shimmerStyle = settings.spinnerShimmerStyle === "flash" ? "flash" : "sweep";
+			const shimmerStyle = settings.spinnerShimmerStyle === "flash" || settings.spinnerShimmerStyle === "sparkle"
+				? settings.spinnerShimmerStyle
+				: "sweep";
 			const shimmerColor = settings.spinnerShimmerColor ?? "default";
 
 			if (!sub || sub === "preview") {
 				if (!ctx.hasUI) return;
 				if (!theme) {
-					ctx.ui.notify(`Spinner verb: ${currentVerb}, status: ${currentStatus}, style=${style}, speed=${speed}, dots=${animatedDots ? "on" : "off"}, shimmer=${shimmerStyle} ${shimmerDirection} ${shimmerColor} (no theme)`, "info");
+					ctx.ui.notify(`Spinner verb: ${currentVerb}, status: ${currentStatus}, style=${style}, speed=${speed}, dots=${dotsStatus}, shimmer=${shimmerStyle} ${shimmerDirection} ${shimmerColor} (no theme)`, "info");
 					return;
 				}
 				const lines: string[] = [
-					`Current: verb=${currentVerb}, status=${currentStatus}, style=${style}, speed=${speed}, dots=${animatedDots ? "on" : "off"}`,
+					`Current: verb=${currentVerb}, status=${currentStatus}, style=${style}, speed=${speed}, dots=${dotsStatus}`,
 					`Shimmer: ${shimmerStyle}, ${shimmerDirection}, color=${shimmerColor}`,
 					"",
 					"Preview of common theme keys (pick one for verb or status):",
@@ -8813,14 +9000,21 @@ export default function (pi: ExtensionAPI) {
 			if (sub === "dots") {
 				const mode = (parts[1] ?? "status").toLowerCase();
 				if (mode === "status") {
-					if (ctx.hasUI) ctx.ui.notify(`Spinner animated dots: ${animatedDots ? "on" : "off"}`, "info");
+					if (ctx.hasUI) ctx.ui.notify(`Spinner dots: ${dotsStatus}`, "info");
+					return;
+				}
+				if (mode === "disabled") {
+					writeSettingsKey("spinnerDotsDisabled", true);
+					bustSpinnerSettingsCache();
+					if (ctx.hasUI) ctx.ui.notify("Spinner dots → disabled", "info");
 					return;
 				}
 				if (mode !== "on" && mode !== "off" && mode !== "toggle") {
-					if (ctx.hasUI) ctx.ui.notify("Usage: /spinner dots on|off|toggle|status", "error");
+					if (ctx.hasUI) ctx.ui.notify("Usage: /spinner dots on|off|disabled|toggle|status", "error");
 					return;
 				}
-				const enabled = mode === "toggle" ? !animatedDots : mode === "on";
+				const enabled = mode === "toggle" ? dotsDisabled || !animatedDots : mode === "on";
+				writeSettingsKey("spinnerDotsDisabled", false);
 				writeSettingsKey("spinnerAnimatedDots", enabled);
 				bustSpinnerSettingsCache();
 				if (ctx.hasUI) ctx.ui.notify(`Spinner animated dots → ${enabled ? "on" : "off"}`, "info");
@@ -8849,8 +9043,8 @@ export default function (pi: ExtensionAPI) {
 					if (ctx.hasUI) ctx.ui.notify(`Spinner style: ${style}`, "info");
 					return;
 				}
-				if (mode !== "asterisk" && mode !== "breathing") {
-					if (ctx.hasUI) ctx.ui.notify("Usage: /spinner style asterisk|breathing|status", "error");
+				if (mode !== "asterisk" && mode !== "breathing" && mode !== "orbit") {
+					if (ctx.hasUI) ctx.ui.notify("Usage: /spinner style asterisk|breathing|orbit|status", "error");
 					return;
 				}
 				writeSettingsKey("spinnerStyle", mode);
@@ -8881,8 +9075,8 @@ export default function (pi: ExtensionAPI) {
 					if (ctx.hasUI) ctx.ui.notify(`Spinner shimmer style: ${shimmerStyle}`, "info");
 					return;
 				}
-				if (mode !== "sweep" && mode !== "flash") {
-					if (ctx.hasUI) ctx.ui.notify("Usage: /spinner shimmer-style sweep|flash|status", "error");
+				if (mode !== "sweep" && mode !== "flash" && mode !== "sparkle") {
+					if (ctx.hasUI) ctx.ui.notify("Usage: /spinner shimmer-style sweep|flash|sparkle|status", "error");
 					return;
 				}
 				writeSettingsKey("spinnerShimmerStyle", mode);
@@ -8914,7 +9108,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (sub !== "verb" && sub !== "status") {
-				if (ctx.hasUI) ctx.ui.notify("Usage: /spinner verb|status <key> | style asterisk|breathing|status | speed slow|medium|fast|status | dots on|off|toggle|status | shimmer-direction left|right|status | shimmer-style sweep|flash|status | shimmer-color #RRGGBB|status|reset | reset | preview", "error");
+				if (ctx.hasUI) ctx.ui.notify("Usage: /spinner verb|status <key> | style asterisk|breathing|orbit|status | speed slow|medium|fast|status | dots on|off|disabled|toggle|status | shimmer-direction left|right|status | shimmer-style sweep|flash|sparkle|status | shimmer-color #RRGGBB|status|reset | reset | preview", "error");
 				return;
 			}
 
@@ -8958,6 +9152,15 @@ export default function (pi: ExtensionAPI) {
 		// same tick — deferred passes pick up the final theme without coupling).
 		rebindUiChromeToTheme(ctx);
 		scheduleDeferredChromeRebind(ctx, 0);
+		if (
+			(event as { reason?: string })?.reason === "startup"
+			&& ctx.mode === "tui"
+			&& ctx.hasUI
+			&& readSettings().startupAnimation === true
+		) {
+			const { playStartupAnimation } = await import("./startup-animation.ts");
+			await playStartupAnimation(event, ctx);
+		}
 		const reason = (event as { reason?: string })?.reason;
 		if (reason === "resume" || reason === "new" || reason === "fork") {
 			scheduleDeferredChromeRebind(ctx, 48);
@@ -9756,6 +9959,8 @@ export default function (pi: ExtensionAPI) {
 		clearHighlightCache();
 		invalidateThemePaletteCache();
 		bumpToolBranchVisualEpoch();
+		_headerDetailsOverride = null;
+		_knownLoadedResourcesContainer = null;
 	});
 }
 
@@ -9765,4 +9970,17 @@ export default function (pi: ExtensionAPI) {
 // widening the public export (see scripts/math-preprocess.test.ts).
 export const __mathPreprocessInternals = {
 	buildParagraphSegments,
+};
+
+export const __headerToggleInternals = {
+	headerDetailsEnabled,
+	setHeaderDetailsOverride: (v: boolean | null) => { _headerDetailsOverride = v; },
+	isResourceSectionLine,
+	isLoadedResourcesContainer,
+	handleHeaderCommand,
+	initContainerPatches: () => {
+		patchContainerParentTracking();
+		patchGlobalToolBorders();
+	},
+	LOADED_RESOURCES_CONTAINER_FLAG,
 };

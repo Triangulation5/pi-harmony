@@ -5,9 +5,9 @@
  * verb is fully on screen.
  */
 
-import { DotsAnimator } from "./spin-dots";
-import { TypewriterAnimator } from "./typewriter";
-import type { SpawnScheduler } from "./spin-dots";
+import { DotsAnimator } from "./spin-dots.ts";
+import { TypewriterAnimator } from "./typewriter.ts";
+import type { SpawnScheduler } from "./spin-dots.ts";
 
 export interface SpinnerTextAnimator {
     /** Display the first verb immediately and start the enabled animation loops. */
@@ -21,6 +21,8 @@ export interface SpinnerTextAnimator {
     setToolActive(active: boolean): void;
     /** Enable or disable the animated dot suffix. */
     setDotsEnabled(enabled: boolean): void;
+    /** Show or hide the dot suffix entirely. */
+    setDotsVisible(visible: boolean): void;
     /** True while the verb is fading out or typing in. */
     isAnimating(): boolean;
     /** Fade amount for the outgoing verb, from 0 to 1. */
@@ -36,9 +38,11 @@ export function createSpinnerTextAnimator(options: {
     pickVerb: (previous: string) => string;
     onChange?: () => void;
     animatedDots?: boolean;
+    dotsVisible?: boolean;
 }): SpinnerTextAnimator {
     const dots = new DotsAnimator(options.schedule, Math.random, options.onChange);
     let dotsEnabled = options.animatedDots === true;
+    let dotsVisible = options.dotsVisible !== false;
     const typewriter = new TypewriterAnimator(
         options.schedule,
         Math.random,
@@ -47,7 +51,7 @@ export function createSpinnerTextAnimator(options: {
             // Dots hide during the fade and retyping, then re-spawn fresh.
             if (phase !== "stable") {
                 dots.stop();
-            } else if (phase === "stable" && dotsEnabled) {
+            } else if (phase === "stable" && dotsEnabled && dotsVisible) {
                 dots.start();
             }
         },
@@ -56,7 +60,7 @@ export function createSpinnerTextAnimator(options: {
     return {
         start(initialVerb: string): void {
             typewriter.start(initialVerb);
-            if (dotsEnabled) dots.start();
+            if (dotsEnabled && dotsVisible) dots.start();
         },
         stop(): void {
             typewriter.stop();
@@ -68,8 +72,14 @@ export function createSpinnerTextAnimator(options: {
         setDotsEnabled(enabled: boolean): void {
             if (dotsEnabled === enabled) return;
             dotsEnabled = enabled;
-            if (enabled && !typewriter.isAnimating) dots.start();
+            if (enabled && dotsVisible && !typewriter.isAnimating) dots.start();
             else dots.stop();
+        },
+        setDotsVisible(visible: boolean): void {
+            if (dotsVisible === visible) return;
+            dotsVisible = visible;
+            if (!visible) dots.stop();
+            else if (dotsEnabled && !typewriter.isAnimating) dots.start();
         },
         isAnimating(): boolean {
             return typewriter.isAnimating;
@@ -81,6 +91,7 @@ export function createSpinnerTextAnimator(options: {
             return typewriter.displayedText;
         },
         dotsSuffix(): string {
+            if (!dotsVisible) return " ";
             if (!dotsEnabled) return "...";
             return typewriter.isAnimating ? "" : dots.suffix;
         },

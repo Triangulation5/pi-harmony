@@ -20,10 +20,14 @@
   "showTruncationHints": false,
   "themeAdaptive": true,
   "spinnerAnimatedDots": false,
+  "spinnerDotsDisabled": false,
   "spinnerSpeed": "medium",
   "spinnerStyle": "asterisk",
   "spinnerShimmerDirection": "left-to-right",
   "spinnerShimmerStyle": "sweep",
   "terminalTheme": true,
+  "headerDetails": true,
+  "quietStartup": false,
+  "startupAnimation": false,
   "diffColors": {}
 }

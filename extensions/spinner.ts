@@ -29,7 +29,7 @@ let STATUS_DIM = "\x1b[38;2;153;153;153m";
 // Short TTL so /spinner changes are picked up within ~1s without
 // re-reading the file on every spinner tick (~170ms).
 type SpinnerSpeed = "slow" | "medium" | "fast";
-type SpinnerStyle = "asterisk" | "breathing";
+type SpinnerStyle = "asterisk" | "breathing" | "orbit";
 type ShimmerDirection = "left-to-right" | "right-to-left";
 
 let _spinnerSettingsCache: {
@@ -38,6 +38,7 @@ let _spinnerSettingsCache: {
         verbColor: string;
         statusColor: string;
         animatedDots: boolean;
+        dotsDisabled: boolean;
         speed: SpinnerSpeed;
         style: SpinnerStyle;
         shimmerDirection: ShimmerDirection;
@@ -57,6 +58,7 @@ function readSpinnerSettings(): {
     verbColor: string;
     statusColor: string;
     animatedDots: boolean;
+    dotsDisabled: boolean;
     speed: SpinnerSpeed;
     style: SpinnerStyle;
     shimmerDirection: ShimmerDirection;
@@ -74,6 +76,7 @@ function readSpinnerSettings(): {
     }
     let adaptive = true;
     let animatedDots = false;
+    let dotsDisabled = false;
     let speed: SpinnerSpeed = "medium";
     let style: SpinnerStyle = "asterisk";
     let shimmerDirection: ShimmerDirection = "left-to-right";
@@ -94,19 +97,22 @@ function readSpinnerSettings(): {
                 if (typeof raw.spinnerVerbColor === "string" && raw.spinnerVerbColor.length > 0) verbColor = raw.spinnerVerbColor;
                 if (typeof raw.spinnerStatusColor === "string" && raw.spinnerStatusColor.length > 0) statusColor = raw.spinnerStatusColor;
                 if (typeof raw.spinnerAnimatedDots === "boolean") animatedDots = raw.spinnerAnimatedDots;
+                if (typeof raw.spinnerDotsDisabled === "boolean") dotsDisabled = raw.spinnerDotsDisabled;
                 if (raw.spinnerSpeed === "slow" || raw.spinnerSpeed === "medium" || raw.spinnerSpeed === "fast") speed = raw.spinnerSpeed;
-                if (raw.spinnerStyle === "asterisk" || raw.spinnerStyle === "breathing") style = raw.spinnerStyle;
+                if (raw.spinnerStyle === "asterisk" || raw.spinnerStyle === "breathing" || raw.spinnerStyle === "orbit") {
+                    style = raw.spinnerStyle;
+                }
                 if (raw.spinnerShimmerDirection === "left-to-right" || raw.spinnerShimmerDirection === "right-to-left") {
                     shimmerDirection = raw.spinnerShimmerDirection;
                 }
-                if (raw.spinnerShimmerStyle === "sweep" || raw.spinnerShimmerStyle === "flash") {
+                if (raw.spinnerShimmerStyle === "sweep" || raw.spinnerShimmerStyle === "flash" || raw.spinnerShimmerStyle === "sparkle") {
                     shimmerStyle = raw.spinnerShimmerStyle;
                 }
                 if (typeof raw.spinnerShimmerColor === "string") shimmerColor = raw.spinnerShimmerColor;
             }
         } catch { /* ignore */ }
     }
-    const value = { adaptive, verbColor, statusColor, animatedDots, speed, style, shimmerDirection, shimmerStyle, shimmerColor };
+    const value = { adaptive, verbColor, statusColor, animatedDots, dotsDisabled, speed, style, shimmerDirection, shimmerStyle, shimmerColor };
     _spinnerSettingsCache = { value, expires: now + SPINNER_SETTINGS_TTL_MS };
     return value;
 }
@@ -180,6 +186,7 @@ function getDefaultSpinnerCharacters(): string[] {
 const SPINNER_CHARS = getDefaultSpinnerCharacters();
 // The star shapes grow and contract around the same centered point.
 const BREATHING_FRAMES = ["·", "✧", "✦", "✶", "✹", "✶", "✦", "✧"];
+const ORBIT_FRAMES = ["○", "◎", "◉", "●"];
 // Match the default npm package's glyph cycle and cadence.
 const ASTERISK_FRAMES = [...SPINNER_CHARS, ...[...SPINNER_CHARS].reverse()];
 // Medium preserves the existing cadence; slow and fast are selectable at runtime.
@@ -194,7 +201,10 @@ function getLoaderIntervalMs(_loader: any): number {
 }
 
 function getLoaderFrames(): string[] {
-    return readSpinnerSettings().style === "breathing" ? BREATHING_FRAMES : ASTERISK_FRAMES;
+    const style = readSpinnerSettings().style;
+    if (style === "breathing") return BREATHING_FRAMES;
+    if (style === "orbit") return ORBIT_FRAMES;
+    return ASTERISK_FRAMES;
 }
 
 function unrefTimer(timer: ReturnType<typeof setTimeout> | null | undefined): void {
@@ -1169,8 +1179,9 @@ export default function (pi: ExtensionAPI) {
         const verb = latest
             ? `${describeToolActivity(latest.name, latest.args)}${running.length > 1 ? ` (+${running.length - 1} more)` : ""}`
             : textAnimator ? textAnimator.displayedText() : currentVerb;
-        // The suffix stays static when animated dots are off.
-        const dotsSuffix = textAnimator?.dotsSuffix() ?? "...";
+        // "off" keeps a static ellipsis; "disabled" leaves only spacing.
+        const spinnerSettings = readSpinnerSettings();
+        const dotsSuffix = spinnerSettings.dotsDisabled ? " " : textAnimator?.dotsSuffix() ?? "...";
         const verbFade = latest ? 0 : textAnimator?.fadeAmount() ?? 0;
         const now = Date.now();
         const shimmering = !latest && spinnerShimmerUntil > now && !textAnimator?.isAnimating();
@@ -1186,7 +1197,7 @@ export default function (pi: ExtensionAPI) {
             })}${CLAUDE_ORANGE}${dotsSuffix}${RESET}`
             : `${getSpinnerVerbColor(verbFade)}${verb}${dotsSuffix}${RESET}`;
         if (statusParts.length > 0) {
-            message += statusText(` (${statusParts.join(" · ")})`);
+            message += statusText(`${spinnerSettings.dotsDisabled ? "" : " "}(${statusParts.join(" · ")})`);
         }
         return message;
     }
@@ -1263,7 +1274,9 @@ export default function (pi: ExtensionAPI) {
         // take effect within ~250 ms without waiting for the next pi event.
         // applyThemeColors only re-resolves two theme colors, so this is cheap.
         applyThemeColors(activeCtx.ui?.theme);
-        textAnimator?.setDotsEnabled(readSpinnerSettings().animatedDots);
+        const spinnerSettings = readSpinnerSettings();
+        textAnimator?.setDotsVisible(!spinnerSettings.dotsDisabled);
+        textAnimator?.setDotsEnabled(spinnerSettings.animatedDots);
         const nextMessage = buildWorkingMessage();
         if (!force && nextMessage === lastWorkingMessage) return;
         lastWorkingMessage = nextMessage;
@@ -1388,10 +1401,12 @@ export default function (pi: ExtensionAPI) {
     /** Fresh typewriter + optional dot loops at the start of each turn. */
     function startTextAnimator(): void {
         stopTextAnimator();
+        const spinnerSettings = readSpinnerSettings();
         textAnimator = createSpinnerTextAnimator({
             schedule: scheduleAnimation,
             pickVerb: pickVerb,
-            animatedDots: readSpinnerSettings().animatedDots,
+            animatedDots: spinnerSettings.animatedDots,
+            dotsVisible: !spinnerSettings.dotsDisabled,
             onChange: () => {
                 // Diff-checked: only pushes work when the rendered string changed.
                 if (turnActive) syncWorkingMessage();

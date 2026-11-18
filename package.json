@@ -46,10 +46,10 @@
     "extensions/bash-intent.ts",
     "extensions/theme-colors.ts",
     "extensions/terminal-theme.ts",
+    "extensions/startup-animation.ts",
     "skills/web-search-cli/SKILL.md",
     "skills/web-search-cli/scripts/search.py",
     "packages/rpiv-ask-user-question/**",
-    "packages/pi-vim/**",
     "config/config.example.json",
     "README.md",
     "CHANGELOG.md"
@@ -58,7 +58,7 @@
     "test": "node --experimental-strip-types --test scripts/*.test.ts scripts/*.test.mts",
     "test:fullscreen": "node scripts/fullscreen-mouse.test.mjs",
     "test:fullscreen-copy": "node scripts/fullscreen-copy.test.mjs",
-    "typecheck": "tsc --noEmit --allowImportingTsExtensions --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck extensions/index.ts extensions/spinner.ts packages/rpiv-ask-user-question/index.ts packages/pi-vim/index.ts",
+    "typecheck": "tsc --noEmit --allowImportingTsExtensions --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck extensions/index.ts extensions/spinner.ts packages/rpiv-ask-user-question/index.ts",
     "pack:dry-run": "npm pack --dry-run",
     "publish:dry-run": "npm publish --dry-run",
     "bench:tools": "bun scripts/benchmark-tools.ts"
@@ -82,7 +82,6 @@
   },
   "pi": {
     "extensions": [
-      "./packages/pi-vim/index.ts",
       "./extensions/index.ts",
       "./extensions/spinner.ts",
       "./packages/rpiv-ask-user-question/index.ts"

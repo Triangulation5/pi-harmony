@@ -10,6 +10,9 @@ import { mixRgb, type Rgb } from "./theme-colors.ts";
 const CHAR_SWEEP_MS = 95;
 /** Highlight half-width in glyphs — a tight crest, so a clear flash travels the row instead of a broad wash. */
 const SWEEP_BLUR = 1.15;
+const SPARKLE_STEP_MS = 52;
+const SPARKLE_CORE_BLUR = 0.55;
+const SPARKLE_HALO_BLUR = 1.35;
 const FLASH_PULSE_MS = 180;
 const FLASH_SECOND_START_MS = 340;
 const FLASH_SECOND_STRENGTH = 0.55;
@@ -63,7 +66,7 @@ function parseShimmerColor(value: string | undefined): Rgb | null {
 }
 
 export type ShimmerDirection = "left-to-right" | "right-to-left";
-export type ShimmerStyle = "sweep" | "flash";
+export type ShimmerStyle = "sweep" | "flash" | "sparkle";
 
 function pulseStrength(elapsedMs: number, startMs: number, strength: number): number {
     const progress = (elapsedMs - startMs) / FLASH_PULSE_MS;
@@ -79,7 +82,7 @@ function doubleFlashStrength(elapsedMs: number): number {
 }
 
 /**
- * Renders `body` with either a traveling per-glyph highlight or a double flash.
+ * Renders `body` with a traveling highlight, a double flash, or a fast sparkle.
  *
  * The highlight glides across the glyphs and rests between sweeps, keeping the
  * base text steady instead of pulsing. Flash mode brightens the whole string
@@ -117,6 +120,28 @@ export function renderShimmerText(
         const color = mixRgb(base, highlight, amount);
         const ansi = `\x1b[38;2;${Math.round(color.r)};${Math.round(color.g)};${Math.round(color.b)}m`;
         return `${ansi}${body}\x1b[0m`;
+    }
+
+    if (options.style === "sparkle") {
+        const elapsed = options.elapsedMs ?? nowMs;
+        const phase = ((elapsed / SPARKLE_STEP_MS + Math.abs(seed) % count) % count + count) % count;
+        const center = phase;
+        const dimBase = { r: base.r * 0.3, g: base.g * 0.3, b: base.b * 0.3 };
+        let out = "";
+        let index = 0;
+        for (const glyph of body) {
+            const position = options.direction === "right-to-left" ? count - 1 - index : index;
+            const directDistance = Math.abs(position - center);
+            const distance = Math.min(directDistance, count - directDistance);
+            const core = Math.exp(-(distance ** 2) / (2 * SPARKLE_CORE_BLUR ** 2));
+            const halo = Math.exp(-(distance ** 2) / (2 * SPARKLE_HALO_BLUR ** 2));
+            const dimmed = mixRgb(dimBase, base, halo * 0.28);
+            const shimmer = mixRgb(dimmed, highlight, core);
+            const color = mixRgb(base, shimmer, intensity);
+            out += `\x1b[38;2;${Math.round(color.r)};${Math.round(color.g)};${Math.round(color.b)}m${glyph}`;
+            index++;
+        }
+        return `${out}\x1b[0m`;
     }
 
     let out = "";

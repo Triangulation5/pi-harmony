@@ -13,7 +13,8 @@ For local development, install the checkout directly with `pi install /path/to/p
 ## What's included
 
 - **A polished terminal UI** — grouped tool calls, syntax-highlighted diffs, labeled bash commands, and a theme-aware spinner.
-- **Vim modal editor** — the bundled `pi-vim` extension gives Pi's prompt modal editing (INSERT, NORMAL, VISUAL, V-LINE, EX) while preserving Pi Harmony's `❯` prompt marker and theme integration.
+- **Optional Tetris-style startup animation** — off by default. When enabled, colored pieces assemble the Pi logo before the interface appears. Toggle it with `/tools startup on|off|toggle|status`; it is skipped on macOS Terminal.app and in unsupported terminals.
+- **Configurable UI via `/tools`** — toggle startup resource headers (`/tools header`), tool grouping, and extra detail without bloating the root slash command namespace.
 - **Structured questions** — the bundled `ask_user_question` tool presents interactive questionnaires when the agent needs your input instead of guessing.
 - **Web search** — `/skill:web-search-cli` searches DuckDuckGo Lite with the bundled Python script when native web search is unavailable.
 
@@ -41,7 +42,7 @@ Shell commands that only change files are drawn the same way. `sed -i`, `perl -p
 
 ## Spinner
 
-While a tool runs, the working line names it: `Running npm test...`, `Reading stats.py...`, `Searching for TODO...`, `Waiting for agent: Find edge cases...`. When animated dots are off, a plain `...` remains. While the model thinks, it shows a playful verb instead; verbs fade briefly before switching and typing in with staggered delays. The spinner can use a traveling text shimmer or a two-pulse flash; the flash affects only the verb, with a brighter first pulse and a dimmer second. Toggle animated dots with `/spinner dots on|off|toggle`; choose the default Pi glyph cycle or a Claude-like star-breathing cycle with `/spinner style asterisk|breathing`. The asterisk style matches the spinner cycle from Pi Harmony. The collapsed `Thinking...` row keeps its own traveling shimmer while it streams.
+While a tool runs, the working line names it: `Running npm test...`, `Reading stats.py...`, `Searching for TODO...`, `Waiting for agent: Find edge cases...`. When animated dots are off, a plain `...` remains; `/spinner dots disabled` replaces them with one space. While the model thinks, it shows a playful verb instead; verbs fade briefly before switching and typing in with staggered delays. The spinner can use a traveling text shimmer, a two-pulse flash, or a fast `sparkle` that darts across individual letters with a bright core and dim halo. Toggle animated dots with `/spinner dots on|off|disabled|toggle`; choose the default Pi glyph cycle, a Claude-like star-breathing cycle, or the `orbit` circle-fill cycle (`○ ◎ ◉ ●`) with `/spinner style asterisk|breathing|orbit`. The asterisk style matches the spinner cycle from Pi Harmony. The collapsed `Thinking...` row keeps its own traveling shimmer while it streams.
 
 ![The working line during a run](https://raw.githubusercontent.com/FammasMaz/pi-cc-tools/master/docs/media/spinner.gif)
 
@@ -83,44 +84,29 @@ With [pi-subagents](https://github.com/tintinweb/pi-subagents), `Agent` calls ge
 
 ![Two agents reviewing a project](https://raw.githubusercontent.com/FammasMaz/pi-cc-tools/master/docs/media/subagents.gif)
 
-## Modal editing (Vim)
+## Header details
 
-Pi Harmony bundles [`pi-vim`](packages/pi-vim) for full Vim-style modal editing directly inside Pi's prompt, engineered to coexist with Pi Harmony's `❯` prompt marker and theme colors.
+Pi's interactive mode displays loaded resources on startup:
 
-- **Modes**: Opens in `INSERT` mode by default for normal typing. Hit `Esc` to enter `NORMAL` mode.
-- **Motions & Operators**: Standard motions (`w`, `b`, `e`, `ge`, `0`, `$`, `^`, `f{char}`, `t{char}`, `%`, `gg`, `G`), counts (`3dw`, `ci"`, `ya{`), text objects, and `.` to repeat the last edit.
-- **Visual selection**: Press `v` for character-wise VISUAL mode or `V` for V-LINE mode, with full block highlighting.
-- **Undo / Redo**: Vim-scoped undo with `u` and redo with `Ctrl+R`.
-- **Ex commands**: Hit `:` to run Pi commands and shell shortcuts without losing your in-progress prompt draft (e.g., `:tree`, `:model <name>`, `:!git status`).
-- **Toggle anytime**: Switch Vim mode on or off instantly with `/vim on`, `/vim off`, `/vim toggle` (or just `/vim`), or check status with `/vim status`. Kept on by default.
-- **Prompt marker integration**: Unlike standalone installations where custom editor components overwrite each other, Pi Harmony wraps `pi-vim` so the signature `❯` prompt marker, padding, and border status labels work together seamlessly.
+```text
+[Skills]
+  commit, council-mode, pdf-reader, pi-subagents, web-search-cli
 
-### Vim settings
+[Prompts]
+  /council, /gather-context-and-clarify, /parallel-cleanup, /parallel-research, /parallel-review, /review-loop
 
-Vim modal editing is enabled by default. You can customize it under the `piVim` key in `.pi/settings.json` or `~/.pi/agent/settings.json`:
-
-```json
-{
-  "piVim": {
-    "enabled": true,
-    "labelPosition": "bottom-right",
-    "historyNavigation": true,
-    "cursorShape": {
-      "insert": "bar",
-      "normal": "block"
-    }
-  }
-}
+[Extensions]
+  @tychenjiajun/pi-voice, btw.ts, continue.ts, extensions, pi-subagents:bundle, rpiv-ask-user-question, spinner.ts
 ```
 
-| Setting | Default | Description |
-| --- | --- | --- |
-| `piVim.enabled` | `true` | Enable or disable Vim modal editing |
-| `piVim.labelPosition` | `bottom-right` | Position of the mode label (`bottom-right` or `top-left`) |
-| `piVim.historyNavigation` | `true` | Expose Pi's prompt history to `k` / `j` at logical edges in Normal mode |
-| `piVim.cursorShape` | `{"insert": "bar", "normal": "block"}` | Hardware cursor shape in Insert and Normal modes |
-| `piVim.modeColors` | unset | Custom theme tokens or ANSI colors for `insert`, `normal`, `visual`, and `ex` modes |
-| `piVim.borderSync` | `{"insert": "host", "normal": "host", ...}` | Paint policy for Pi's input border (`host`, `mode`, or `thinking`) |
+If you already know what extensions, skills, and prompts you are using and want a cleaner start, toggle this text on or off anytime with `/tools header`:
+
+- `/tools header` (or `/tools header toggle`): switch between showing and hiding the resource details.
+- `/tools header off`: hide `[Skills]`, `[Prompts]`, and `[Extensions]` while keeping the logo, version, and keybinding hints intact (equivalent to Pi's `quietStartup: "header"`).
+- `/tools header on`: show all loaded resources on startup.
+- `/tools header status`: check whether header details are currently on or off.
+
+You can also configure `"headerDetails": false` (or `"quietStartup": "header"`) in `.pi/settings.json` or `~/.pi/agent/settings.json`.
 
 ## Smaller things
 
@@ -134,8 +120,8 @@ Vim modal editing is enabled by default. You can customize it under the `piVim` 
 
 | Command | What it does |
 | --- | --- |
-| `/vim` | Toggle Vim modal editing (`on`, `off`, `toggle`, `status`; on by default) |
 | `/tools` | Show and configure tool display settings |
+| `/tools header on`, `off`, `toggle`, `status` | Toggle startup header details (hides `[Skills]`, `[Prompts]`, `[Extensions]`) |
 | `/tools outlines`, `transparent`, `default` | Tool row style: rules around each tool, no rules (default), or Pi's own backgrounds |
 | `/tools group on`, `off`, `toggle` | Fold consecutive tool calls into one row |
 | `/tools thinking live`, `full`, `latest` | Choose how thinking blocks are shown |
@@ -146,11 +132,11 @@ Vim modal editing is enabled by default. You can customize it under the `piVim` 
 | `/theme on`, `off`, `toggle`, `status` | Derive Pi Harmony's colors from the Pi theme, or use a fixed palette |
 | `/spinner preview` | Show the theme colors available for the spinner |
 | `/spinner verb <key>`, `status <key>`, `reset` | Recolor the spinner's verb or status text |
-| `/spinner dots on`, `off`, `toggle`, `status` | Toggle animated dots after the spinner text (off by default) |
-| `/spinner style asterisk`, `breathing`, `status` | Choose the default Pi glyph cycle or star-breathing spinner style |
+| `/spinner dots on`, `off`, `disabled`, `toggle`, `status` | Animate dots, show static `...`, or hide the suffix entirely |
+| `/spinner style asterisk`, `breathing`, `orbit`, `status` | Choose the default, star-breathing, or circle-fill spinner style |
 | `/spinner speed slow`, `medium`, `fast`, `status` | Change the spinner movement speed (medium by default) |
 | `/spinner shimmer-direction left`, `right`, `status` | Set the shimmer sweep direction |
-| `/spinner shimmer-style sweep`, `flash`, `status` | Set the working-text shimmer (a sweep or double flash) |
+| `/spinner shimmer-style sweep`, `flash`, `sparkle`, `status` | Set the working-text shimmer (traveling sweep, double flash, or fast letter sparkle) |
 | `/spinner shimmer-color #RGB|#RRGGBB`, `status`, `reset` | Customize the shimmer highlight color |
 
 Commands that change a setting save it to the settings file, and the change applies right away.
@@ -165,6 +151,8 @@ Settings are read from `.pi/settings.json` in the project and from the agent set
   "groupToolCalls": true,
   "thinkingMode": "live",
   "thinkingLabel": false,
+  "headerDetails": true,
+  "quietStartup": false,
   "terminalTheme": true,
   "themeAdaptive": true,
   "readOutputMode": "preview",
@@ -230,10 +218,11 @@ The screenshots on this page use `"toolBackground": "transparent"`.
 | `spinnerVerbColor` | `borderAccent` | Theme color of the spinner's verb |
 | `spinnerStatusColor` | `muted` | Theme color of the spinner's status text |
 | `spinnerAnimatedDots` | `false` | Animate dots after the spinner text; toggle with `/spinner dots on|off|toggle` |
-| `spinnerStyle` | `asterisk` | Spinner animation: default Pi glyph cycle or Claude-like star-breathing cycle |
+| `spinnerDotsDisabled` | `false` | Replace the spinner's dot suffix with one space; `/spinner dots off` keeps static `...` |
+| `spinnerStyle` | `asterisk` | Spinner animation: default Pi glyph cycle, Claude-like star-breathing cycle, or `orbit` (`○ ◎ ◉ ●`) |
 | `spinnerSpeed` | `medium` | Spinner movement speed: `slow`, `medium` or `fast` |
 | `spinnerShimmerDirection` | `left-to-right` | Shimmer direction for spinner text and collapsed active thinking |
-| `spinnerShimmerStyle` | `sweep` | Spinner-text shimmer: traveling sweep or double flash; collapsed `Thinking...` stays a sweep |
+| `spinnerShimmerStyle` | `sweep` | Spinner-text shimmer: traveling sweep, double flash, or fast letter sparkle; collapsed `Thinking...` stays a sweep |
 | `spinnerShimmerColor` | unset | Optional `#RGB` or `#RRGGBB` highlight color for spinner text and collapsed active thinking |
 
 With `themeAdaptive` on, colors come from these pi theme tokens:
@@ -260,4 +249,3 @@ This project builds on the work of:
 - [@heyhuynhgiabuu/pi-diff](https://github.com/buddingnewinsights/pi-diff) by [huynhgiabuu](https://github.com/buddingnewinsights): the Shiki diff renderer with word-level changes in split and unified views
 - [pi-tool-display](https://github.com/MasuRii/pi-tool-display) by [MasuRii](https://github.com/MasuRii): compact tool rows, diff display and output truncation
 - [pi-polish](https://github.com/Pringled/pi-extensions/tree/main/packages/pi-polish) by [Thomas van Dongen](https://github.com/Pringled): the one-sentence tool groups, the activity spinner and the `❯` prompt markers follow its design
-- [pi-vim](https://github.com/lajarre/pi-vim) by [lajarre](https://github.com/lajarre): Vim-style modal editing for Pi's TUI editor

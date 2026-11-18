@@ -30,3 +30,28 @@ test("default shimmer sweeps spinner text", () => {
 
     assert.notEqual(first, next);
 });
+
+test("sparkle moves quickly through the spinner word with a dim halo", () => {
+    const render = (elapsedMs: number) => renderShimmerText("Working", BASE, 0, false, 0, {
+        style: "sparkle",
+        elapsedMs,
+    });
+    const glyphs = (text: string) => [...text.matchAll(/\x1b\[38;2;(\d+);(\d+);(\d+)m(.)/g)];
+    const brightestIndex = (text: string) => {
+        const colors = glyphs(text).map((match) => match.slice(1, 4).map(Number));
+        return colors.reduce(
+            (brightest, color, index) =>
+                color.reduce((sum, channel) => sum + channel, 0)
+                    > colors[brightest].reduce((sum, channel) => sum + channel, 0)
+                    ? index
+                    : brightest,
+            0,
+        );
+    };
+    const atStart = glyphs(render(0));
+    assert.equal(brightestIndex(render(0)), 0);
+    assert.equal(brightestIndex(render(52 * 3)), 3);
+    assert.equal(brightestIndex(render(52 * 4)), 4);
+    const colorScore = (match: RegExpMatchArray) => match.slice(1, 4).map(Number).reduce((sum, channel) => sum + channel, 0);
+    assert.ok(colorScore(atStart[1]) > colorScore(atStart[3]));
+});
