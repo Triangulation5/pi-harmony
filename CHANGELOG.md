@@ -1,12 +1,24 @@
 # Changelog
 
 > [!IMPORTANT]
-> **Historical:** At 1.0.69, the package was renamed from `pi-claude-style-tools` to `pi-claude-code-ui`. The project has since been rebranded as Pi Harmony.
 
 ## Pi Harmony 1.0.0
 
 - Rebranded the broader Pi workspace as `pi-harmony`.
 - Bundled `rpiv-ask-user-question` and the `web-search-cli` skill with the existing UI and tools.
+
+## 1.5.0 — 2026-11-18
+
+### Performance & Memory
+
+- **Eliminated per-keystroke chat re-renders.** `isLoadedResourcesContainer` now caches `false` on non-header containers and skips chat message/tool components, preventing `Container.prototype.render` from calling `child.render(80)` across every message/tool on every keystroke and busting terminal-width render caches.
+- **Removed redundant thinking-merge scans from `Container.prototype.render`.** Consecutive thinking blocks are now merged on `addChild`, tool grouping, superseding, and `AssistantMessageComponent` content updates instead of scanning every container render.
+- **Avoided loading `@shikijs/cli` by default.** Diff syntax highlighting now uses Pi's built-in `highlightCode` (already resident in memory) and skips building Shiki themes on theme changes unless an explicit Shiki theme (`DIFF_THEME`, `diffTheme`, or `diffColors.shikiTheme`) is configured; `hlCache` limit was also tightened from 48 to 16 entries.
+- **Bounded component render caches and session state.** Added a 48-entry LRU eviction policy for `TOOL_RENDER_CACHE` and `MESSAGE_RENDER_CACHE`, added a fast `"Todos"` substring check in `formatTodoOverlayLines`, unsubscribed `onTerminalInput` listeners across reloads/session switches, and pruned/cleared `CHAT_CONTAINERS` and `ACTIVE_TOOL_GROUPS` on `session_start` and `session_shutdown`.
+
+### Tests
+
+- Added `scripts/user-prompt-patch.test.ts` to verify `.ts` extension entrypoints in `package.json` and that `UserMessageComponent` renders the `❯` prompt marker and background band.
 
 ## 1.0.113 — 2026-11-14
 

@@ -26,6 +26,7 @@ import {
 	createLsTool,
 	createReadTool,
 	createWriteTool,
+	highlightCode,
 } from "@earendil-works/pi-coding-agent";
 import {
 	Box,
@@ -313,6 +314,14 @@ function isLoadedResourcesContainer(container: any): boolean {
 	}
 	for (const child of container.children) {
 		if (!child || typeof child.render !== "function") continue;
+		if (
+			isToolGroupComponent(child)
+			|| isAssistantMessageComponent(child)
+			|| isToolExecutionLike(child)
+			|| child instanceof UserMessageComponent
+		) {
+			continue;
+		}
 		try {
 			const lines = child.render(80);
 			if (Array.isArray(lines) && lines.length > 0 && isResourceSectionLine(lines[0])) {
@@ -322,6 +331,7 @@ function isLoadedResourcesContainer(container: any): boolean {
 			}
 		} catch { /* ignore */ }
 	}
+	container[LOADED_RESOURCES_CONTAINER_FLAG] = false;
 	return false;
 }
 
@@ -1768,7 +1778,15 @@ function patchContainerParentTracking(): void {
 			component[COMPONENT_PARENT] = this;
 			component[ADD_SEQ_KEY] = ++addSequence;
 		}
-		if (component && typeof component.render === "function") {
+		if (
+			this[LOADED_RESOURCES_CONTAINER_FLAG] !== true
+			&& component
+			&& typeof component.render === "function"
+			&& !isToolGroupComponent(component)
+			&& !isAssistantMessageComponent(component)
+			&& !isToolExecutionLike(component)
+			&& !(component instanceof UserMessageComponent)
+		) {
 			try {
 				const lines = component.render(80);
 				if (Array.isArray(lines) && lines.length > 0 && isResourceSectionLine(lines[0])) {
@@ -1797,8 +1815,17 @@ function patchContainerParentTracking(): void {
 }
 
 function formatTodoOverlayLines(lines: string[], width: number): string[] {
-	// Hot path: nearly every Container.render hits this. Bail after the first
-	// non-empty line unless it's actually the Magic Context todo overlay.
+	// Hot path: nearly every Container.render hits this. Bail without regex work
+	// unless any line actually mentions "Todos".
+	let maybeTodo = false;
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i].includes("Todos")) {
+			maybeTodo = true;
+			break;
+		}
+	}
+	if (!maybeTodo) return lines;
+
 	let firstContent: string | undefined;
 	for (let i = 0; i < lines.length; i++) {
 		const plain = stripAnsi(lines[i]).trim();
@@ -1831,7 +1858,6 @@ function patchGlobalToolBorders(): void {
 				return [];
 			}
 		}
-		maybeMergeConsecutiveThinkingMessages(this);
 		if (isToolExecutionLike(this)) {
 			const cached = (this as any)[TOOL_RENDER_CACHE];
 			const branchKey = toolBranchRenderCacheKey();
@@ -1843,6 +1869,7 @@ function patchGlobalToolBorders(): void {
 			) {
 				// A cache hit skips Container.render, which is also where fullscreen
 				// mouse targets are recorded. Restore the layout from that render.
+				touchComponentRenderLru(toolRenderCacheLru, this, TOOL_RENDER_CACHE);
 				if (cached.mouseLayout) (this as { mouseLayout?: unknown }).mouseLayout = cached.mouseLayout;
 				return cached.lines;
 			}
@@ -1855,8 +1882,7 @@ function patchGlobalToolBorders(): void {
 		if (!isToolExecutionLike(this)) return todoOverlay;
 		const branchCache = { branchKey: toolBranchRenderCacheKey(), branchEpoch: _toolBranchVisualEpoch };
 		if (toolBackgroundMode === "default") {
-			(this as any)[TOOL_RENDER_CACHE] = { width, mode: toolBackgroundMode, lines: rendered, mouseLayout, ...branchCache };
-			return rendered;
+			return storeToolRenderCache(this, width, rendered, mouseLayout, branchCache);
 		}
 
 		let start = 0;
@@ -1867,8 +1893,7 @@ function patchGlobalToolBorders(): void {
 
 		const { textLines, imageLines } = splitRenderedImageBlock(rendered.slice(start, end + 1));
 		if (imageLines.length > 0) {
-			(this as any)[TOOL_RENDER_CACHE] = { width, mode: toolBackgroundMode, lines: rendered, mouseLayout, ...branchCache };
-			return rendered;
+			return storeToolRenderCache(this, width, rendered, mouseLayout, branchCache);
 		}
 		// Agent-family tools stay column-aligned with every other tool row — no extra
 		// leading indent (the old nested pad made Agent look offset from Read/Bash).
@@ -1887,8 +1912,7 @@ function patchGlobalToolBorders(): void {
 			result = [spacerLine, ...core, ...imageLines];
 		}
 
-		(this as any)[TOOL_RENDER_CACHE] = { width, mode: toolBackgroundMode, lines: result, mouseLayout, ...branchCache };
-		return result;
+		return storeToolRenderCache(this, width, result, mouseLayout, branchCache);
 	};
 
 	proto[PATCH_FLAG] = true;
@@ -1962,8 +1986,38 @@ function clearStateKeys(state: Record<string, unknown> | undefined, ...keys: str
 	}
 }
 
+const RENDER_CACHE_LRU_LIMIT = 48;
+const toolRenderCacheLru = new Set<object>();
+const messageRenderCacheLru = new Set<object>();
+
+function touchComponentRenderLru(lru: Set<object>, component: object, cacheKey: symbol): void {
+	lru.delete(component);
+	lru.add(component);
+	while (lru.size > RENDER_CACHE_LRU_LIMIT) {
+		const oldest = lru.values().next().value;
+		if (!oldest) break;
+		lru.delete(oldest);
+		delete (oldest as any)[cacheKey];
+	}
+}
+
+function storeToolRenderCache(
+	component: any,
+	width: number,
+	lines: string[],
+	mouseLayout: unknown,
+	branchCache: { branchKey: string; branchEpoch: number },
+): string[] {
+	if (component && typeof component === "object") {
+		component[TOOL_RENDER_CACHE] = { width, mode: toolBackgroundMode, lines, mouseLayout, ...branchCache };
+		touchComponentRenderLru(toolRenderCacheLru, component, TOOL_RENDER_CACHE);
+	}
+	return lines;
+}
+
 function clearToolRenderCache(value: unknown): void {
 	if (!value || typeof value !== "object") return;
+	toolRenderCacheLru.delete(value);
 	delete (value as any)[TOOL_RENDER_CACHE];
 	// If this tool lives inside a ToolGroupComponent, drop the group's memo so
 	// settled headers/counts/child lines can't go stale after a child update.
@@ -2405,6 +2459,7 @@ function messageRenderCacheHit(thisArg: any, width: number): string[] | null {
 		&& cache.mode === toolBackgroundMode
 		&& Array.isArray(cache.lines)
 	) {
+		touchComponentRenderLru(messageRenderCacheLru, thisArg, MESSAGE_RENDER_CACHE);
 		return cache.lines;
 	}
 	return null;
@@ -2418,12 +2473,16 @@ function storeMessageRenderCache(thisArg: any, width: number, lines: string[]): 
 			mode: toolBackgroundMode,
 			lines,
 		};
+		touchComponentRenderLru(messageRenderCacheLru, thisArg, MESSAGE_RENDER_CACHE);
 	}
 	return lines;
 }
 
 function clearMessageRenderCache(thisArg: any): void {
-	if (thisArg && typeof thisArg === "object") thisArg[MESSAGE_RENDER_CACHE] = undefined;
+	if (thisArg && typeof thisArg === "object") {
+		messageRenderCacheLru.delete(thisArg);
+		thisArg[MESSAGE_RENDER_CACHE] = undefined;
+	}
 }
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
@@ -3864,6 +3923,9 @@ function patchAssistantMessages(): void {
 		const hasAssistantText = message.content.some((block: any) => block?.type === "text" && typeof block.text === "string" && block.text.trim());
 		if (typeof workedDuration === "number" && isFinalAssistantMessage && hasAssistantText && !hasWorkedDurationLine(message)) {
 			container.children.push(new Spacer(1), new Text(workedDurationText(workedDuration, workedSessionTotal, workedTurns), 1, 0));
+		}
+		if (this[COMPONENT_PARENT]) {
+			maybeMergeConsecutiveThinkingMessages(this[COMPONENT_PARENT]);
 		}
 	};
 	proto.updateContent = function patchedUpdateContentSuperseded(this: any, message: any, isStreaming?: boolean) {
@@ -5425,7 +5487,7 @@ const DEFAULT_TERM_WIDTH = 200;
 const MAX_PREVIEW_LINES = 60;
 const MAX_RENDER_LINES = 150;
 const MAX_HL_CHARS = 32_000;
-const CACHE_LIMIT = 48;
+const CACHE_LIMIT = 16;
 const DIFF_RENDER_CONCURRENCY = 2;
 const WORD_DIFF_MIN_SIM = 0.15;
 const MAX_WRAP_ROWS_WIDE = 3;
@@ -5679,16 +5741,8 @@ function isLightThemeBackground(theme: any): boolean {
 }
 
 function syncDiffShikiTheme(theme: any): void {
-	if (process.env.DIFF_THEME) return;
-	const config = loadDiffConfig();
-	if (config.diffTheme || config.diffColors?.shikiTheme) return;
+	if (hasExplicitShikiTheme()) return;
 	_diffOnLightBg = isLightThemeBackground(theme);
-	// Highlight diffs with the theme's own syntax colors (the ones pi uses for Markdown code
-	// blocks). GitHub's palette is the fallback for pi versions without concrete theme colors.
-	const fromTheme = themeAdaptiveEnabled() ? shikiThemeFromPiTheme(theme) : null;
-	const next = fromTheme ?? ((_diffOnLightBg ? "github-light" : "github-dark") as BundledTheme);
-	if (diffThemeName(next) !== diffThemeName(DIFF_THEME)) clearHighlightCache();
-	DIFF_THEME = next;
 }
 
 function diffThemeName(theme: BundledTheme | ShikiThemeRegistration): string {
@@ -6393,9 +6447,29 @@ function touchCache(key: string, value: string[]): string[] {
 	return value;
 }
 
+function hasExplicitShikiTheme(): boolean {
+	if (process.env.DIFF_THEME) return true;
+	const config = loadDiffConfig();
+	return Boolean(config.diffTheme || config.diffColors?.shikiTheme);
+}
+
 async function hlBlock(code: string, language: BundledLanguage | undefined): Promise<string[]> {
 	if (!code) return [""];
 	if (!language || code.length > MAX_HL_CHARS) return code.split("\n");
+	if (!hasExplicitShikiTheme()) {
+		const key = `pi\0${language}\0${code}`;
+		const hit = hlCache.get(key);
+		if (hit) return touchCache(key, hit);
+		try {
+			const out = highlightCode(code, language);
+			if (Array.isArray(out) && out.length > 0) {
+				return touchCache(key, out);
+			}
+		} catch {
+			// fall back to plain lines below
+		}
+		return code.split("\n");
+	}
 	const diffTheme = DIFF_THEME;
 	const key = `${diffThemeName(diffTheme)}\0${language}\0${code}`;
 	const hit = hlCache.get(key);
@@ -9159,6 +9233,8 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	let unsubscribeExtraToolDetailInput: (() => void) | undefined;
+
 	pi.on("session_start", async (event, ctx) => {
 		clearRtkRewriteState();
 		if (!ctx.hasUI) return;
@@ -9171,8 +9247,10 @@ export default function (pi: ExtensionAPI) {
 			} catch {}
 		}
 
+		unsubscribeExtraToolDetailInput?.();
+		unsubscribeExtraToolDetailInput = undefined;
 		if (typeof ctx.ui?.onTerminalInput === "function") {
-			ctx.ui.onTerminalInput((data: string) => {
+			unsubscribeExtraToolDetailInput = ctx.ui.onTerminalInput((data: string) => {
 				// Handle Ctrl+Shift+O across tmux and legacy VT escape formats
 				if (
 					data === "\x1b[111;6u" ||
@@ -10017,13 +10095,29 @@ export default function (pi: ExtensionAPI) {
 	// Session rebuild (resume/reload/fork) must not leave history partials blinking.
 	pi.on("session_start", async () => {
 		_clearAllBlinkContexts();
+		for (const parent of CHAT_CONTAINERS) {
+			if (!Array.isArray(parent?.children) || parent.children.length === 0) {
+				CHAT_CONTAINERS.delete(parent);
+			}
+		}
+		for (const group of ACTIVE_TOOL_GROUPS) {
+			if (!group || group.hasPendingTools?.() === false) {
+				ACTIVE_TOOL_GROUPS.delete(group);
+			}
+		}
 	});
 	pi.on("session_shutdown", async () => {
+		unsubscribeExtraToolDetailInput?.();
+		unsubscribeExtraToolDetailInput = undefined;
 		_clearAllBlinkContexts();
 		clearAllBashDurationContexts();
 		clearRtkRewriteState();
 		WRITE_EXISTED_BEFORE.clear();
 		EDIT_LOCALIZED.clear();
+		CHAT_CONTAINERS.clear();
+		ACTIVE_TOOL_GROUPS.clear();
+		toolRenderCacheLru.clear();
+		messageRenderCacheLru.clear();
 		clearHighlightCache();
 		invalidateThemePaletteCache();
 		bumpToolBranchVisualEpoch();
