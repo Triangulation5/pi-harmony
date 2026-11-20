@@ -182,6 +182,7 @@ interface SettingsFile {
 	extraExpandedPreviewMaxLines?: number;
 	extraToolOutputExpanded?: boolean;
 	groupToolCalls?: boolean;
+	toolStatusAnimation?: "blink" | "breathe";
 	bashOutputMode?: "opencode" | "summary" | "preview";
 	/**
 	 * Short purpose labels on bash rows. `model` (default): the model writes them as an
@@ -754,6 +755,33 @@ function toolGroupingEnabled(): boolean {
 	return readSettings().groupToolCalls !== false;
 }
 
+type ToolStatusAnimation = "blink" | "breathe";
+const TOOL_STATUS_ANIMATIONS: readonly ToolStatusAnimation[] = ["blink", "breathe"];
+
+function toolStatusAnimation(): ToolStatusAnimation {
+	return readSettings().toolStatusAnimation === "blink" ? "blink" : "breathe";
+}
+
+function handleToolActivityCommand(raw: string | undefined, ctx: any): void {
+	const mode = raw?.trim().toLowerCase() || "status";
+	if (mode === "status") {
+		if (ctx.hasUI) ctx.ui.notify(`Tool activity: ${toolStatusAnimation()}`, "info");
+		return;
+	}
+	if (!(TOOL_STATUS_ANIMATIONS as readonly string[]).includes(mode)) {
+		if (ctx.hasUI) ctx.ui.notify(`Usage: /tools activity ${TOOL_STATUS_ANIMATIONS.join("|")}|status`, "error");
+		return;
+	}
+	const next = mode as ToolStatusAnimation;
+	writeSettingsKey("toolStatusAnimation", next);
+	for (const entry of _blinkContexts.values()) {
+		try { entry.invalidate(); } catch { /* tool may have ended */ }
+	}
+	for (const group of ACTIVE_TOOL_GROUPS) group.invalidate();
+	ctx.ui?.requestRender?.();
+	if (ctx.hasUI) ctx.ui.notify(`Tool activity: ${next}`, "info");
+}
+
 function setToolGroupingEnabled(enabled: boolean): void {
 	writeSettingsKey("groupToolCalls", enabled);
 }
@@ -911,7 +939,11 @@ function pendingBreatheDot(theme: Theme): string {
 
 function groupStatusLight(status: ToolStatus): string {
 	const color = status === "success" ? TOOL_STATUS_SUCCESS : status === "error" ? TOOL_STATUS_ERROR : TOOL_STATUS_PENDING;
-	if (status === "pending") return paintPendingBreatheDot(TOOL_STATUS_SUCCESS);
+	if (status === "pending") {
+		return toolStatusAnimation() === "blink"
+			? (_globalBlinkPhaseIndex % 2 === 0 ? paintStatusDot(TOOL_STATUS_SUCCESS) : " ")
+			: paintPendingBreatheDot(TOOL_STATUS_SUCCESS);
+	}
 	return paintStatusDot(color);
 }
 
@@ -4844,6 +4876,9 @@ function blinkDot(ctx: any, theme: Theme): string {
 	setupBlinkTimer(ctx);
 	const key = getBlinkKey(ctx);
 	if (key?._blinkActive !== true) return " ";
+	if (toolStatusAnimation() === "blink") {
+		return _globalBlinkPhaseIndex % 2 === 0 ? themeStatusDot(theme, "success") : " ";
+	}
 	return pendingBreatheDot(theme);
 }
 
@@ -8499,6 +8534,7 @@ export default function (pi: ExtensionAPI) {
 	const TOOL_SUBCOMMANDS = [
 		...TOOL_MODES,
 		"group",
+		"activity",
 		"detail",
 		"thinking",
 		"thinking-label",
@@ -8526,6 +8562,7 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.notify([
 			`Tool style: ${toolBackgroundMode}`,
 			`Tool grouping: ${toolGroupingEnabled() ? "on" : "off"}`,
+			`Tool activity: ${toolStatusAnimation()}`,
 			`Thinking: ${getThinkingMode()}`,
 			`Thinking label: ${thinkingLabelEnabled() ? "on" : "off"}`,
 			`Bash labels: ${bashIntentMode}`,
@@ -8547,6 +8584,7 @@ export default function (pi: ExtensionAPI) {
 						label: m,
 						description:
 							m === "group" ? "Toggle grouped adjacent/concurrent tool rows"
+							: m === "activity" ? "Pending tool indicator: smooth breathing or on/off blinking"
 							: m === "thinking" ? "Thinking display: live (default), full, or latest"
 							: m === "thinking-label" ? "Show a ∴ Thinking: label above expanded thinking"
 							: m === "intent" ? "Purpose labels on bash rows: model (default), local, or off"
@@ -8567,6 +8605,20 @@ export default function (pi: ExtensionAPI) {
 						value: `header ${m}`,
 						label: m,
 						description: `${m} startup header details ([Skills], [Prompts], [Extensions])`,
+					}));
+			}
+			if (first === "activity") {
+				const second = parts[1] ?? "";
+				return [...TOOL_STATUS_ANIMATIONS, "status"]
+					.filter((mode) => mode.startsWith(second))
+					.map((mode) => ({
+						value: `activity ${mode}`,
+						label: mode,
+						description: mode === "breathe"
+							? "Use the gradual six-step pending indicator (default)"
+							: mode === "blink"
+								? "Use the classic on/off pending indicator"
+								: "Show the current pending indicator style",
 					}));
 			}
 			if (first === "thinking") {
@@ -8634,6 +8686,10 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			if (sub === "activity") {
+				handleToolActivityCommand(parts[1], ctx);
+				return;
+			}
 
 			if (sub === "intent") {
 				const arg = parts[1] ?? "status";
@@ -10114,4 +10170,9 @@ export const __headerToggleInternals = {
 		patchGlobalToolBorders();
 	},
 	LOADED_RESOURCES_CONTAINER_FLAG,
+};
+
+export const __toolStatusAnimationInternals = {
+	toolStatusAnimation,
+	handleToolActivityCommand,
 };

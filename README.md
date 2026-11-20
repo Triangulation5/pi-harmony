@@ -125,6 +125,7 @@ You can also configure `"headerDetails": false` (or `"quietStartup": "header"`) 
 | `/tools header on`, `off`, `toggle`, `status` | Toggle startup header details (hides `[Skills]`, `[Prompts]`, `[Extensions]`) |
 | `/tools outlines`, `transparent`, `default` | Tool row style: rules around each tool, no rules (default), or Pi's own backgrounds |
 | `/tools group on`, `off`, `toggle` | Fold consecutive tool calls into one row |
+| `/tools activity breathe`, `blink`, `status` | Choose gradual pending-tool breathing (default) or classic on/off blinking |
 | `/tools thinking live`, `full`, `latest` | Choose how thinking blocks are shown |
 | `/tools thinking-label on`, `off`, `toggle`, `status` | Show `∴ Thinking:` above expanded thinking blocks |
 | `/tools intent off`, `model`, `local`, `status` | Choose the source for bash labels; applies after `/reload` |
@@ -151,6 +152,7 @@ Settings are read from `.pi/settings.json` in the project and from the agent set
 {
   "toolBackground": "transparent",
   "groupToolCalls": true,
+  "toolStatusAnimation": "breathe",
   "thinkingMode": "live",
   "thinkingLabel": false,
   "headerDetails": true,
@@ -183,6 +185,7 @@ The screenshots on this page use `"toolBackground": "transparent"`.
 | --- | --- | --- |
 | `toolBackground` | `transparent` | `transparent` draws no rules, `outlines` draws a rule above and below each tool (`border` also works), `default` keeps pi's tool backgrounds |
 | `groupToolCalls` | `true` | Fold consecutive tool calls into one row |
+| `toolStatusAnimation` | `breathe` | Pending tool indicator: a gradual six-step glyph cycle (`breathe`) or a classic on/off light (`blink`); change with `/tools activity` |
 | `thinkingMode` | `live` | `live` collapses finished thinking to `Thought for Xs`, `full` keeps it expanded, `latest` hides it in all but the latest message |
 | `thinkingLabel` | `false` | Show `∴ Thinking:` above expanded thinking blocks; toggle with `/tools thinking-label on|off` |
 | `previewLines` | `8` | Lines in a collapsed preview |

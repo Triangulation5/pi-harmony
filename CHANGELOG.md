@@ -9,6 +9,10 @@
 
 ## 1.5.2 — 2026-11-19
 
+### Configurable tool activity indicator
+
+- **Pending indicator animation is configurable with `/tools activity breathe|blink|status`.** The default is the gradual breathing cycle; changes apply immediately and are saved as `toolStatusAnimation`.
+
 ### Tool activity indicator
 
 - **All pending tools now breathe uniformly.** Removed agent-family special-casing; every running tool uses the same six-step, single-cell glyph cycle.

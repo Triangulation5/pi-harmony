@@ -8,6 +8,7 @@
   "extraExpandedPreviewMaxLines": 12000,
   "extraToolOutputExpanded": false,
   "groupToolCalls": true,
+  "toolStatusAnimation": "breathe",
   "thinkingMode": "live",
   "thinkingLabel": false,
   "bashOutputMode": "opencode",
