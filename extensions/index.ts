@@ -720,12 +720,6 @@ function isToolExecutionLike(value: unknown): value is { toolName: string; toolC
 	return typeof candidate.toolName === "string" && typeof candidate.toolCallId === "string";
 }
 
-const AGENT_FAMILY_TOOL_NAMES = new Set(["Agent", "Agents", "get_subagent_result", "steer_subagent"]);
-
-function isAgentFamilyToolName(name: unknown): boolean {
-	return typeof name === "string" && AGENT_FAMILY_TOOL_NAMES.has(name);
-}
-
 function isTerminalImageLine(line: string): boolean {
 	return line.includes(KITTY_IMAGE_PREFIX) || line.includes(ITERM2_IMAGE_PREFIX);
 }
@@ -877,16 +871,14 @@ function getToolGroupOverallStatus(tools: any[]): ToolStatus {
 	return "success";
 }
 
-// Claude Code: solid filled circle that is either fully present or fully gone
-// while pending — never a hollow outlined ○. Classic ● + bold is the sweet
-// spot for ordinary tools. Agent-family tools use a breathing size cycle.
+// Pending tools breathe through single-cell glyphs instead of flashing fully on/off.
 const STATUS_DOT_FILLED = "●";
 const STATUS_DOT_BOLD = "\x1b[1m";
 // Single-cell glyphs only (⬤ is often double-width and walks the baseline).
 // Optical sizes share the same cell so the center stays put while breathing:
 // big ● → medium • → small · → invisible → small · → medium •
-const AGENT_BREATHE_GLYPHS = ["●", "•", "·", " ", "·", "•"] as const;
-const AGENT_BREATHE_LEN = AGENT_BREATHE_GLYPHS.length;
+const PENDING_BREATHE_GLYPHS = ["●", "•", "·", " ", "·", "•"] as const;
+const PENDING_BREATHE_LEN = PENDING_BREATHE_GLYPHS.length;
 
 function paintStatusDot(colorAnsi: string): string {
 	return `${colorAnsi}${STATUS_DOT_BOLD}${STATUS_DOT_FILLED}${TRANSPARENT_RESET}`;
@@ -897,34 +889,29 @@ function themeStatusDot(theme: Theme, colorKey: "success" | "error" | "dim" | "m
 	return theme.fg(colorKey, `${STATUS_DOT_BOLD}${STATUS_DOT_FILLED}`);
 }
 
-function agentBreatheGlyphRaw(): string {
+function pendingBreatheGlyphRaw(): string {
 	// Always exactly one display cell — matches ordinary tool dots, keeps titles aligned.
-	return AGENT_BREATHE_GLYPHS[_globalBlinkPhaseIndex % AGENT_BREATHE_LEN];
+	return PENDING_BREATHE_GLYPHS[_globalBlinkPhaseIndex % PENDING_BREATHE_LEN];
 }
 
-function paintAgentBreatheDot(colorAnsi: string = TOOL_STATUS_SUCCESS): string {
-	const glyph = agentBreatheGlyphRaw();
+function paintPendingBreatheDot(colorAnsi: string = TOOL_STATUS_SUCCESS): string {
+	const glyph = pendingBreatheGlyphRaw();
 	if (glyph === " ") return " ";
 	// Bold only on the largest frame so weight changes without shifting the cell.
 	const bold = glyph === "●" ? STATUS_DOT_BOLD : "";
 	return `${colorAnsi}${bold}${glyph}${TRANSPARENT_RESET}`;
 }
 
-function agentBreatheDot(theme: Theme): string {
-	const glyph = agentBreatheGlyphRaw();
+function pendingBreatheDot(theme: Theme): string {
+	const glyph = pendingBreatheGlyphRaw();
 	if (glyph === " ") return " ";
 	const bold = glyph === "●" ? STATUS_DOT_BOLD : "";
 	return theme.fg("success", `${bold}${glyph}`);
 }
 
-function groupStatusLight(status: ToolStatus, options?: { agentBreathe?: boolean }): string {
+function groupStatusLight(status: ToolStatus): string {
 	const color = status === "success" ? TOOL_STATUS_SUCCESS : status === "error" ? TOOL_STATUS_ERROR : TOOL_STATUS_PENDING;
-	if (status === "pending") {
-		// Prefer the shared blink phase over wall-clock so group lights stay in sync
-		// with the global timer (and Agent breathe). Space keeps column alignment.
-		if (options?.agentBreathe) return paintAgentBreatheDot(TOOL_STATUS_SUCCESS);
-		return _globalBlinkPhase ? paintStatusDot(TOOL_STATUS_SUCCESS) : " ";
-	}
+	if (status === "pending") return paintPendingBreatheDot(TOOL_STATUS_SUCCESS);
 	return paintStatusDot(color);
 }
 
@@ -1170,12 +1157,11 @@ function formatBranchedToolLines(
 	total: number,
 	width: number,
 	status: ToolStatus,
-	options?: { agentBreathe?: boolean },
 ): string[] {
 	const output: string[] = [];
 	const content = lines.filter((line) => isTerminalImageLine(line) || stripAnsi(line).trim().length > 0);
 	const safeContent = content.length > 0 ? content : [""];
-	const light = groupStatusLight(status, options);
+	const light = groupStatusLight(status);
 	for (let lineIndex = 0; lineIndex < safeContent.length; lineIndex++) {
 		const line = safeContent[lineIndex];
 		if (isTerminalImageLine(line)) {
@@ -1409,11 +1395,8 @@ class ToolGroupComponent extends Container {
 			mouseChildren.push({ component: target, height: rowLines.length, top: mouseY });
 			mouseY += rowLines.length;
 		};
-		// Group header breathes only when every pending member is Agent-family;
-		// mixed groups keep the ordinary on/off light.
 		const pendingTools = this.tools.filter((tool) => getToolStatusForGroup(tool) === "pending");
-		const headerBreathe = pendingTools.length > 0 && pendingTools.every((tool) => isAgentFamilyToolName(getToolName(tool)));
-		const light = groupStatusLight(overall, { agentBreathe: headerBreathe });
+		const light = groupStatusLight(overall);
 		const running = status.pending > 0;
 		if (running) this.runStartedAt ??= Date.now();
 		else this.runStartedAt = undefined;
@@ -1464,7 +1447,6 @@ class ToolGroupComponent extends Container {
 						total,
 						safeWidth,
 						getToolStatusForGroup(tool),
-						{ agentBreathe: isAgentFamilyToolName(getToolName(tool)) },
 					);
 					const row = branched.map((line) => clampLineWidth(line, safeWidth));
 					recordLines(row, tool);
@@ -4740,10 +4722,8 @@ type BlinkEntry = { key: any; order: number; invalidate: () => void };
 const _blinkContexts = new Map<any, BlinkEntry>();
 let _globalBlinkTimer: ReturnType<typeof setTimeout> | null = null;
 let _blinkOrder = 0;
-// Shared phase for all blinkers. Ordinary tools use even/odd (on/off ●).
-// Agent-family tools map the index onto a 6-step size breath cycle.
+// Shared phase for all pending tools, mapped onto a 6-step size breath cycle.
 let _globalBlinkPhaseIndex = 0;
-let _globalBlinkPhase = true;
 
 function getBlinkIntervalMs(): number {
 	return BLINK_INTERVAL_MS;
@@ -4801,8 +4781,7 @@ function _scheduleGlobalBlinkTimer(): void {
 			_clearAllBlinkContexts();
 			return;
 		}
-		_globalBlinkPhaseIndex = (_globalBlinkPhaseIndex + 1) % AGENT_BREATHE_LEN;
-		_globalBlinkPhase = _globalBlinkPhaseIndex % 2 === 0;
+		_globalBlinkPhaseIndex = (_globalBlinkPhaseIndex + 1) % PENDING_BREATHE_LEN;
 		for (const entry of getBlinkingEntries()) {
 			try { entry.invalidate(); } catch { /* noop */ }
 		}
@@ -4865,13 +4844,7 @@ function blinkDot(ctx: any, theme: Theme): string {
 	setupBlinkTimer(ctx);
 	const key = getBlinkKey(ctx);
 	if (key?._blinkActive !== true) return " ";
-	// Agent-family tools breathe through sizes; ordinary tools still on/off ●.
-	if (ctx?.state?._agentBreathe === true) {
-		return agentBreatheDot(theme);
-	}
-	// Claude Code: solid filled circle that either shows or fully disappears —
-	// never a hollow outlined ○ in the off phase.
-	return _globalBlinkPhase ? themeStatusDot(theme, "success") : " ";
+	return pendingBreatheDot(theme);
 }
 
 // ---------------------------------------------------------------------------
@@ -7437,8 +7410,6 @@ function genericToolLabel(name: string): string {
 function renderGenericToolCall(name: string, args: any, theme: Theme, ctx: any): Text {
 	syncToolCallStatus(ctx);
 	ctx.state._openAiPatchFiles = [];
-	// Agent / subagent tools get a size-breathing pending marker, not on/off ●.
-	if (isAgentFamilyToolName(name)) ctx.state._agentBreathe = true;
 	const sp = (path: string) => shortPath(ctx.cwd ?? process.cwd(), path);
 	const summary = stableCallSummary(ctx, "_callSummary", () => summarizeGenericToolCall(name, args, theme, sp));
 	return makeText(

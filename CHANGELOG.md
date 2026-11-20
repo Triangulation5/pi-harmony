@@ -7,7 +7,17 @@
 - Rebranded the broader Pi workspace as `pi-harmony`.
 - Bundled `rpiv-ask-user-question` and the `web-search-cli` skill with the existing UI and tools.
 
+## 1.5.2 — 2026-11-19
+
+### Tool activity indicator
+
+- **All pending tools now breathe uniformly.** Removed agent-family special-casing; every running tool uses the same six-step, single-cell glyph cycle.
+
 ## 1.5.0 — 2026-11-18
+
+### Tool activity indicator
+
+- **Pending tool indicators now breathe instead of flashing on and off.** Grouped and individual running rows use the same six-step, single-cell glyph cycle.
 
 ### Cross-platform local labels & Path resolution
 
