@@ -8,7 +8,7 @@ import {
 	type Component,
 	type TUI,
 } from "@earendil-works/pi-tui";
-import { readMergedSettings } from "./settings-store.ts";
+import { readMergedSettings } from "../../settings/store.ts";
 
 export const STARTUP_STYLES = ["tetris", "matrix", "fireworks", "wave", "retro"] as const;
 export type StartupStyle = (typeof STARTUP_STYLES)[number];
@@ -351,12 +351,23 @@ function renderScaledLogoLines(mode: string, cellW: number, cellH: number): stri
 	return gridToLines(grid, mode);
 }
 
+const scheduleCache = new Map<number, { schedule: Schedule[]; end: number }>();
+
+function getSchedule(headroom: number): { schedule: Schedule[]; end: number } {
+	let cached = scheduleCache.get(headroom);
+	if (!cached) {
+		cached = buildSchedule(headroom);
+		scheduleCache.set(headroom, cached);
+	}
+	return cached;
+}
+
 function getStyleEnd(style: string, headroom: number): number {
 	if (style === "matrix") return 45;
 	if (style === "fireworks") return 40;
 	if (style === "wave") return 35;
 	if (style === "retro") return 35;
-	return buildSchedule(headroom).end;
+	return getSchedule(headroom).end;
 }
 
 function renderLogoLines(style: string, mode: string, tick: number | null, headroom: number): string[] {
@@ -372,8 +383,7 @@ function renderLogoLines(style: string, mode: string, tick: number | null, headr
 	if (style === "retro") {
 		return renderRetroLines(mode, tick, headroom);
 	}
-	const timeline = buildSchedule(headroom);
-	return logoLinesTetris(mode, tick, timeline.schedule, headroom);
+	return logoLinesTetris(mode, tick, getSchedule(headroom).schedule, headroom);
 }
 
 class StartupAnimation implements Component {
@@ -430,8 +440,8 @@ class StartupAnimation implements Component {
 			if (real - this.started >= 650) {
 				this.stage = "animating";
 				this.stageStarted = now;
+				this.tui.requestRender();
 			}
-			this.tui.requestRender();
 			return;
 		}
 		if (this.stage === "animating") {
@@ -508,7 +518,8 @@ class StartupAnimation implements Component {
 		const yOffset = tick == null ? 0 : this.headroom * CELL_H;
 		const safeX = Math.max(0, Math.min(width - currentLogoWidth, Math.round(x)));
 		const safeY = Math.max(0, Math.round(y - yOffset));
-		const out = Array.from({ length: height }, () => " ".repeat(width));
+		const blankLine = " ".repeat(width);
+		const out = new Array<string>(height).fill(blankLine);
 
 		for (let i = 0; i < lines.length; i++) {
 			const row = safeY + i;

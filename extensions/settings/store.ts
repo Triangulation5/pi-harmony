@@ -1,7 +1,8 @@
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
-import { getUserSettingsPath } from "./settings-path.ts";
+import { getUserSettingsPath } from "./path.ts";
 
 /**
  * Shared, stale-while-revalidate reader for the merged project + user settings.
@@ -85,4 +86,24 @@ export function readMergedSettings(): MergedSettings {
 export function invalidateSettings(): void {
 	generation++;
 	cache = null;
+}
+
+/** Update or delete a single key in the user's settings.json and invalidate the cache. */
+export function writeSettingsKey(key: string, value: unknown): void {
+	invalidateSettings();
+	const path = getUserSettingsPath();
+	const dir = dirname(path);
+	let settings: Record<string, unknown> = {};
+	try {
+		if (existsSync(path)) settings = JSON.parse(readFileSync(path, "utf8")) ?? {};
+	} catch { /* start fresh */ }
+	if (value === undefined) {
+		delete settings[key];
+	} else {
+		settings[key] = value;
+	}
+	try {
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(path, JSON.stringify(settings, null, 2) + "\n");
+	} catch { /* best effort */ }
 }

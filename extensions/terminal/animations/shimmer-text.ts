@@ -1,6 +1,6 @@
 /** Shimmer effects used by the working spinner text. */
 
-import { mixRgb, type Rgb } from "./theme-colors.ts";
+import { mixRgb, type Rgb } from "../themes/theme-colors.ts";
 
 // ---------------------------------------------------------------------------
 // Timing

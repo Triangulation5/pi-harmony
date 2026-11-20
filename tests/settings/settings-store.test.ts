@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { invalidateSettings, readMergedSettings } from "../extensions/settings-store.ts";
+import { invalidateSettings, readMergedSettings } from "../../extensions/settings/store.ts";
 
 function writeProjectSettings(dir: string, settings: Record<string, unknown>): void {
 	mkdirSync(join(dir, ".pi"), { recursive: true });

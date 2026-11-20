@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { pythonCandidates } from "../skills/web-search-cli/scripts/run-search.mjs";
+import { pythonCandidates } from "../../skills/web-search-cli/scripts/run-search.mjs";
 
 test("web-search launcher checks the Windows Python launcher first", () => {
 	assert.deepEqual(pythonCandidates("win32"), [

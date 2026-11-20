@@ -12,7 +12,7 @@ import {
 	requestLocalIntent,
 	resetLocalIntentsForTests,
 	watchLocalIntent,
-} from "../extensions/bash-intent.ts";
+} from "../../extensions/bash/intent.ts";
 
 test("local intent selects Apple native only on supported Apple silicon Macs", () => {
 	assert.equal(localIntentBackend("darwin", "arm64", "25.0.0"), "apple");

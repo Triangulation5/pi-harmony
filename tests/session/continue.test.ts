@@ -3,7 +3,7 @@ import { test } from "node:test";
 import continueExtension, {
 	isTmuxSession,
 	TMUX_SHIFT_ALT_ENTER_SEQUENCES,
-} from "../extensions/continue.ts";
+} from "../../extensions/session/continue.ts";
 
 interface MockShortcut {
 	description?: string;

@@ -36,7 +36,7 @@ type I18nLoader = {
 // Registration is deferred off the load path (no top-level await): the bridge already
 // falls back to English until the locales land, and `/languages` flips them live, so
 // the tool is registered immediately while the SDK loads in the background.
-const i18nPackageUrl = import.meta.url;
+const i18nPackageUrl = new URL("..", import.meta.url).href;
 function registerLocalesInBackground(): void {
 	setImmediate(() => {
 		import("@juicesharp/rpiv-i18n/loader")

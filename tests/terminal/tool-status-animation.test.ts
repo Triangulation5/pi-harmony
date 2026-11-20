@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { __toolStatusAnimationInternals } from "../extensions/index.ts";
-import { invalidateSettings } from "../extensions/settings-store.ts";
+import { __toolStatusAnimationInternals } from "../../extensions/index.ts";
+import { invalidateSettings } from "../../extensions/settings/store.ts";
 
 const { toolStatusAnimation, handleToolActivityCommand } = __toolStatusAnimationInternals;
 

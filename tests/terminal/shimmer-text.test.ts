@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { renderShimmerText } from "../extensions/shimmer-text.ts";
+import { renderShimmerText } from "../../extensions/terminal/animations/shimmer-text.ts";
 
 const BASE = "\x1b[38;2;80;90;100m";
 

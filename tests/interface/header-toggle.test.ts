@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Container } from "@earendil-works/pi-tui";
-import { __headerToggleInternals } from "../extensions/index.ts";
+import { __headerToggleInternals } from "../../extensions/index.ts";
 
 const {
 	headerDetailsEnabled,

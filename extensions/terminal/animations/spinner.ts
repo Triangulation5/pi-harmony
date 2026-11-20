@@ -6,8 +6,9 @@ import { basename, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, Loader } from "@earendil-works/pi-tui";
 
-import { invalidateSettings, readMergedSettings } from "./settings-store.ts";
-import { rgbFgAnsi, type Rgb } from "./theme-colors.ts";
+import { getAgentDir } from "../../settings/path.ts";
+import { invalidateSettings, readMergedSettings } from "../../settings/store.ts";
+import { rgbFgAnsi, type Rgb } from "../themes/theme-colors.ts";
 import { renderShimmerText, type ShimmerStyle } from "./shimmer-text.ts";
 import { createSpinnerTextAnimator, type SpinnerTextAnimator } from "./spinner-animation.ts";
 import type { SpawnScheduler } from "./spin-dots.ts";
@@ -253,7 +254,12 @@ function stopLoaderIfUiStopped(loader: any): boolean {
     return true;
 }
 
+const origLoaderUpdateDisplay = (Loader.prototype as any).updateDisplay;
+const origLoaderStart = Loader.prototype.start;
+const origLoaderStop = Loader.prototype.stop;
+
 (Loader.prototype as any).updateDisplay = function patchedUpdateDisplay() {
+    if (readMergedSettings().claudeUi === false) return origLoaderUpdateDisplay?.call(this);
     if (stopLoaderIfUiStopped(this)) return;
     const frames = getLoaderFrames();
     const frame = frames[this.currentFrame % frames.length];
@@ -276,6 +282,7 @@ function stopLoaderIfUiStopped(loader: any): boolean {
 };
 
 Loader.prototype.start = function patchedStart() {
+    if (readMergedSettings().claudeUi === false) return origLoaderStart?.call(this);
     this.stop();
     (this as any)[LOADER_ACTIVE] = true;
     const generation = ((this as any)[LOADER_GENERATION] ?? 0) + 1;
@@ -301,6 +308,7 @@ Loader.prototype.start = function patchedStart() {
 };
 
 Loader.prototype.stop = function patchedStop() {
+    if (readMergedSettings().claudeUi === false) return origLoaderStop?.call(this);
     (this as any)[LOADER_ACTIVE] = false;
     (this as any)[LOADER_GENERATION] = ((this as any)[LOADER_GENERATION] ?? 0) + 1;
     if ((this as any).intervalId) {
@@ -895,7 +903,7 @@ function readUserKeybindingsFile(): Record<string, unknown> | undefined {
     if (userKeybindingsCache && userKeybindingsCache.expires > now) return userKeybindingsCache.value;
     let value: Record<string, unknown> | undefined;
     try {
-        const agentDir = process.env.PI_AGENT_DIR || join(homedir(), ".pi", "agent");
+        const agentDir = getAgentDir();
         const raw = JSON.parse(readFileSync(join(agentDir, "keybindings.json"), "utf-8"));
         if (raw && typeof raw === "object") value = raw;
     } catch { /* no user keybindings */ }
@@ -1197,8 +1205,7 @@ function hasOfficialHerdrIntegration(): boolean {
         return officialHerdrIntegrationInstalled;
     }
 
-    const agentDir = process.env.PI_CODING_AGENT_DIR
-        || join(homedir(), ".pi", "agent");
+    const agentDir = getAgentDir();
 
     try {
         const integrationPath = join(agentDir, "extensions", "herdr-agent-state.ts");

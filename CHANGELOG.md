@@ -7,6 +7,32 @@
 - Rebranded the broader Pi workspace as `pi-harmony`.
 - Bundled `rpiv-ask-user-question` and the `web-search-cli` skill with the existing UI and tools.
 
+## Unreleased — 2026-11-20
+
+### Startup animation styles & controls
+
+- **Added selectable startup animation styles under `/tools startup`.** Supports `tetris` (default), `matrix`, `fireworks`, `wave`, and `retro`, alongside `on`, `off`, `toggle`, and `status`, with argument completions.
+- **Smoothly resizes the logo when moving into the header position.** Interpolates cell dimensions down to the compact logo size as it eases into the top-left corner.
+- **Pressing any keybind skips the startup animation.**
+- **Fixed a crash during the warmup stage** in `matrix` mode caused by negative tick indices (`tick = -1`) in modulo color/glyph lookups.
+
+### Claude UI style toggle
+
+- **Added `/tools claude-ui on|off|toggle|status` (saved as `claudeUi`).** Turning it off disables the Claude Code UI patches (`❯` prompt marker, custom spinner/`Loader.prototype` overrides, built-in tool render overrides, `session_start`/`turn_start` chrome hooks, and theme background overrides) so Pi renders with its default UI.
+
+### Architecture & Modularization
+
+- **Reorganized extensions into domain-oriented directories**: `extensions/bash/`, `extensions/session/`, `extensions/settings/`, `extensions/terminal/animations/`, `extensions/terminal/themes/`, and `extensions/shared/`.
+- **Centralized shared settings & path helpers** (`writeSettingsKey` in `extensions/settings/store.ts`, `getAgentDir` in `extensions/settings/path.ts`) and moved bash file-edit snapshot helpers into `extensions/bash/file-edit.ts`.
+- **Moved `packages/rpiv-ask-user-question` source into `src/`** while preserving package exports, `locales/`, `docs/`, and independent package boundaries.
+- **Reorganized tests into `tests/` by subsystem** (`bash/`, `session/`, `settings/`, `terminal/`, `interface/`, `integrations/`).
+
+### Performance
+
+- **Async file snapshots for `bash` and `write` tools.** Converted `readBashEditSnapshot`, `snapshotBashFileEdit`, `collectBashFileEdits`, and `write` pre-read diffs to use `node:fs/promises` (`stat` / `readFile`) instead of blocking the event loop with synchronous reads.
+- **Eliminated redundant startup settings read.** `readPiThemeSetting()` now reads `theme` from the cached settings store instead of re-reading and parsing `settings.json` synchronously.
+- **Reduced startup animation frame overhead.** Memoized the Tetris schedule per headroom, stopped requesting 30ms redraws during the static warmup period, and reused a single blank line buffer per frame.
+
 ## 1.5.2 — 2026-11-19
 
 ### Configurable tool activity indicator

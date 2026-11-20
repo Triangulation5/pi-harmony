@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createSpinnerTextAnimator } from "../extensions/spinner-animation.ts";
+import { createSpinnerTextAnimator } from "../../extensions/terminal/animations/spinner-animation.ts";
 
 const schedule = () => () => {};
 const pickVerb = () => "Thinking";

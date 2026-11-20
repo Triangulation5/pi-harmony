@@ -12,7 +12,7 @@ import {
 	shouldShowSpinnerTip,
 	SPINNER_TIP_MIN_ELAPSED_MS,
 	SPINNER_TIP_OCCASIONAL_CHANCE,
-} from "../extensions/spinner.ts";
+} from "../../extensions/terminal/animations/spinner.ts";
 
 test("DEFAULT_SPINNER_TIPS includes keybinds, subagents, context, commands, and skills", () => {
 	assert.ok(DEFAULT_SPINNER_TIPS.length >= 10);
@@ -113,7 +113,7 @@ test("/spinner tips is registered with completions and status reporting", async 
 		getCommands: () => [],
 	};
 
-	const { default: initTools } = await import("../extensions/index.ts");
+	const { default: initTools } = await import("../../extensions/index.ts");
 	initTools(mockPi);
 	assert.ok(registeredSpinnerCommand, "/spinner command should be registered");
 

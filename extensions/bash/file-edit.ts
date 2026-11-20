@@ -1,3 +1,7 @@
+import { readFile as readFileAsync, stat as statAsync } from "node:fs/promises";
+import { homedir } from "node:os";
+import { resolve } from "node:path";
+
 // Recognize shell commands that only change files (sed -i, perl -pi, heredoc and echo
 // redirects), so their bash rows can be drawn like edit/write rows with a diff.
 // Purely a rendering aid: the command runs unchanged, and anything this parser is
@@ -298,4 +302,36 @@ export function detectBashFileEdit(command: string): BashFileEdit | undefined {
 	if (rest.length !== 1) return undefined;
 	const write = parseWrite(rest[0], split.expands ? undefined : split.body);
 	return write ? { ...write, ...(cd ? { cd } : {}) } : undefined;
+}
+
+const MAX_BASH_SNAPSHOT_BYTES = 1_000_000;
+
+export function resolveBashEditPath(cwd: string, edit: BashFileEdit, path: string): string {
+	const expand = (value: string) => {
+		if (value === "~") return homedir();
+		if (value.startsWith("~/") || (process.platform === "win32" && value.startsWith("~\\"))) {
+			return resolve(homedir(), value.slice(2));
+		}
+		return value;
+	};
+	return resolve(edit.cd ? resolve(cwd, expand(edit.cd)) : cwd, expand(path));
+}
+
+/** File text; null when the file does not exist; undefined when it can't be compared (too big, binary, unreadable). */
+export async function readBashEditSnapshot(path: string): Promise<string | null | undefined> {
+	try {
+		const stat = await statAsync(path);
+		if (!stat.isFile() || stat.size > MAX_BASH_SNAPSHOT_BYTES) return undefined;
+		const text = await readFileAsync(path, "utf8");
+		return text.includes("\0") ? undefined : text;
+	} catch (err: any) {
+		return err?.code === "ENOENT" ? null : undefined;
+	}
+}
+
+export async function snapshotBashFileEdit(cwd: string, edit: BashFileEdit): Promise<Map<string, string | null | undefined>> {
+	const entries = await Promise.all(
+		edit.paths.map(async (path) => [path, await readBashEditSnapshot(resolveBashEditPath(cwd, edit, path))] as const),
+	);
+	return new Map(entries);
 }

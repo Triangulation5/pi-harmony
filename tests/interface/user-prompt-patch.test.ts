@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { UserMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
-import initTools from "../extensions/index.ts";
+import initTools from "../../extensions/index.ts";
 
 test("package.json pi.extensions uses TypeScript entrypoints for jiti module aliasing", () => {
-	const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+	const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
 	const extensions: string[] = pkg?.pi?.extensions ?? [];
 	assert.ok(extensions.length > 0);
 	for (const entry of extensions) {

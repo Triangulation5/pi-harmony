@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readFile as readFileAsync } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -94,7 +94,7 @@ import {
 	buildBashPreview,
 	describeBashSource,
 	formatBashDuration,
-} from "./bash-command.ts";
+} from "./bash/command.ts";
 import {
 	BASH_INTENT_MODES,
 	cleanIntentLabel,
@@ -104,10 +104,16 @@ import {
 	requestLocalIntent,
 	watchLocalIntent,
 	type BashIntentMode,
-} from "./bash-intent.ts";
-import { detectBashFileEdit, type BashFileEdit } from "./bash-file-edit.ts";
-import { getUserSettingsPath } from "./settings-path.ts";
-import { invalidateSettings, readMergedSettings } from "./settings-store.ts";
+} from "./bash/intent.ts";
+import {
+	detectBashFileEdit,
+	readBashEditSnapshot,
+	resolveBashEditPath,
+	snapshotBashFileEdit,
+	type BashFileEdit,
+} from "./bash/file-edit.ts";
+import { getUserSettingsPath } from "./settings/path.ts";
+import { invalidateSettings, readMergedSettings, writeSettingsKey } from "./settings/store.ts";
 import {
 	blendForContrast,
 	mixRgb as mixThemeRgb,
@@ -119,14 +125,14 @@ import {
 	themeAppearance,
 	themeTokenRgb,
 	type ShikiThemeRegistration,
-} from "./theme-colors.ts";
+} from "./terminal/themes/theme-colors.ts";
 import {
 	activeThemeName,
 	requestTerminalColorScheme,
 	startFocusResync,
 	SYSTEM_THEME_NAME,
 	systemThemeAvailable,
-} from "./terminal-theme.ts";
+} from "./terminal/themes/terminal-theme.ts";
 
 const RESET = "\x1b[0m";
 const TRANSPARENT_BG = "\x1b[49m";
@@ -401,25 +407,6 @@ const SPINNER_BUST_KEY = Symbol.for("pi-claude-style-tools:spinner-settings-bust
 function bustSpinnerSettingsCache(): void {
 	const current = ((globalThis as any)[SPINNER_BUST_KEY] as number | undefined) ?? 0;
 	(globalThis as any)[SPINNER_BUST_KEY] = current + 1;
-}
-
-function writeSettingsKey(key: string, value: unknown): void {
-	invalidateSettings(); // next read is fresh
-	const path = getUserSettingsPath();
-	const dir = dirname(path);
-	let settings: Record<string, unknown> = {};
-	try {
-		if (existsSync(path)) settings = JSON.parse(readFileSync(path, "utf8")) ?? {};
-	} catch { /* start fresh */ }
-	if (value === undefined) {
-		delete settings[key];
-	} else {
-		settings[key] = value;
-	}
-	try {
-		mkdirSync(dir, { recursive: true });
-		writeFileSync(path, JSON.stringify(settings, null, 2) + "\n");
-	} catch { /* best effort */ }
 }
 
 let toolBackgroundOverride: "default" | "transparent" | "outlines" | null = null;
@@ -5429,14 +5416,10 @@ function themeChosenOnCommandLine(): boolean {
 	return process.argv.some((arg) => arg === "--use-theme" || arg.startsWith("--use-theme="));
 }
 
-/** Pi's saved `theme` setting (may be a "light/dark" pair), from pi's own settings file. */
+/** Pi's saved `theme` setting (may be a "light/dark" pair), from the cached settings store. */
 function readPiThemeSetting(): string | undefined {
-	try {
-		const raw = JSON.parse(readFileSync(getUserSettingsPath(), "utf8"));
-		return typeof raw?.theme === "string" && raw.theme ? raw.theme : undefined;
-	} catch {
-		return undefined;
-	}
+	const theme = (readSettings() as { theme?: unknown }).theme;
+	return typeof theme === "string" && theme ? theme : undefined;
 }
 
 /**
@@ -8393,48 +8376,18 @@ interface BashFileEditRecord {
 	language?: BundledLanguage;
 }
 
-const MAX_BASH_SNAPSHOT_BYTES = 1_000_000;
-
-function resolveBashEditPath(cwd: string, edit: BashFileEdit, path: string): string {
-	const expand = (value: string) => {
-		if (value === "~") return homedir();
-		if (value.startsWith("~/") || (process.platform === "win32" && value.startsWith("~\\"))) {
-			return resolve(homedir(), value.slice(2));
-		}
-		return value;
-	};
-	return resolve(edit.cd ? resolve(cwd, expand(edit.cd)) : cwd, expand(path));
-}
-
-/** File text; null when the file does not exist; undefined when it can't be compared (too big, binary, unreadable). */
-function readBashEditSnapshot(path: string): string | null | undefined {
-	try {
-		if (!existsSync(path)) return null;
-		const stat = statSync(path);
-		if (!stat.isFile() || stat.size > MAX_BASH_SNAPSHOT_BYTES) return undefined;
-		const text = readFileSync(path, "utf8");
-		return text.includes("\0") ? undefined : text;
-	} catch {
-		return undefined;
-	}
-}
-
-function snapshotBashFileEdit(cwd: string, edit: BashFileEdit): Map<string, string | null | undefined> {
-	const snapshot = new Map<string, string | null | undefined>();
-	for (const path of edit.paths) snapshot.set(path, readBashEditSnapshot(resolveBashEditPath(cwd, edit, path)));
-	return snapshot;
-}
-
-function collectBashFileEdits(cwd: string, edit: BashFileEdit, before: Map<string, string | null | undefined>): BashFileEditRecord[] {
-	const records: BashFileEditRecord[] = [];
-	for (const path of edit.paths) {
-		const full = resolveBashEditPath(cwd, edit, path);
-		const previous = before.get(path);
-		const current = readBashEditSnapshot(full);
-		if (previous === undefined || typeof current !== "string" || previous === current) continue;
-		records.push({ path, created: previous === null, diff: parseDiff(previous ?? "", current), language: lang(full) });
-	}
-	return records;
+async function collectBashFileEdits(cwd: string, edit: BashFileEdit, before: Map<string, string | null | undefined>): Promise<BashFileEditRecord[]> {
+	const results = await Promise.all(
+		edit.paths.map(async (path): Promise<BashFileEditRecord | null> => {
+			const previous = before.get(path);
+			if (previous === undefined) return null;
+			const full = resolveBashEditPath(cwd, edit, path);
+			const current = await readBashEditSnapshot(full);
+			if (typeof current !== "string" || previous === current) return null;
+			return { path, created: previous === null, diff: parseDiff(previous ?? "", current), language: lang(full) };
+		}),
+	);
+	return results.filter((r): r is BashFileEditRecord => r !== null);
 }
 
 function bashFileEditHeader(edit: BashFileEdit, records: BashFileEditRecord[] | undefined, theme: Theme, cwd: string, sp: (path: string) => string, prefix: string, trailing: string): string {
@@ -8827,7 +8780,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (sub === "startup") {
-				const { STARTUP_STYLES, getStartupStyle } = await import("./startup-animation.ts");
+				const { STARTUP_STYLES, getStartupStyle } = await import("./terminal/animations/startup-animation.ts");
 				const raw = (parts[1] || "toggle").toLowerCase();
 				const currentStyle = getStartupStyle();
 				const isEnabled = currentStyle !== "off";
@@ -9376,40 +9329,42 @@ export default function (pi: ExtensionAPI) {
 			});
 		}
 
-		intentNoticeUi = ctx.ui;
-		patchUiNotifications(ctx.ui);
-		patchAgentWidget(ctx.ui);
-		installPromptMarkerEditor(ctx);
-		// terminalTheme (on by default): switch to, and stay on, the theme built from the
-		// terminal's palette. `pi --use-theme <name>` still wins for that run.
-		if (terminalThemeEnabled() && !(themeChosenOnCommandLine() && activeThemeName(ctx.ui) !== SYSTEM_THEME_NAME)) {
-			applyTerminalTheme(ctx, { announce: true, reportUnavailable: readSettings().terminalTheme === true });
+		if (claudeUiEnabled()) {
+			intentNoticeUi = ctx.ui;
+			patchUiNotifications(ctx.ui);
+			patchAgentWidget(ctx.ui);
+			installPromptMarkerEditor(ctx);
+			// terminalTheme (on by default): switch to, and stay on, the theme built from the
+			// terminal's palette. `pi --use-theme <name>` still wins for that run.
+			if (terminalThemeEnabled() && !(themeChosenOnCommandLine() && activeThemeName(ctx.ui) !== SYSTEM_THEME_NAME)) {
+				applyTerminalTheme(ctx, { announce: true, reportUnavailable: readSettings().terminalTheme === true });
+			}
+			// Session switch (/resume, /new) can leave tool chrome from the previous
+			// theme; rebind from ctx.ui.theme (other extensions may setTheme in the
+			// same tick — deferred passes pick up the final theme without coupling).
+			rebindUiChromeToTheme(ctx);
+			scheduleDeferredChromeRebind(ctx, 0);
+			const reason = (event as { reason?: string })?.reason;
+			if (reason === "resume" || reason === "new" || reason === "fork") {
+				scheduleDeferredChromeRebind(ctx, 48);
+				// Chat history rebuild can run after session_start; re-sync transparent tool bgs.
+				scheduleDeferredChromeRebind(ctx, 120);
+			}
 		}
-		// Session switch (/resume, /new) can leave tool chrome from the previous
-		// theme; rebind from ctx.ui.theme (other extensions may setTheme in the
-		// same tick — deferred passes pick up the final theme without coupling).
-		rebindUiChromeToTheme(ctx);
-		scheduleDeferredChromeRebind(ctx, 0);
 		if (
 			(event as { reason?: string })?.reason === "startup"
 			&& ctx.mode === "tui"
 			&& ctx.hasUI
 		) {
-			const { getStartupStyle, playStartupAnimation } = await import("./startup-animation.ts");
+			const { getStartupStyle, playStartupAnimation } = await import("./terminal/animations/startup-animation.ts");
 			if (getStartupStyle() !== "off") {
 				await playStartupAnimation(event, ctx);
 			}
 		}
-		const reason = (event as { reason?: string })?.reason;
-		if (reason === "resume" || reason === "new" || reason === "fork") {
-			scheduleDeferredChromeRebind(ctx, 48);
-			// Chat history rebuild can run after session_start; re-sync transparent tool bgs.
-			scheduleDeferredChromeRebind(ctx, 120);
-		}
 	});
 
 	pi.on("turn_start", async (_event, ctx) => {
-		if (!ctx.hasUI) return;
+		if (!ctx.hasUI || !claudeUiEnabled()) return;
 		patchUiNotifications(ctx.ui);
 		patchAgentWidget(ctx.ui);
 		applyToolBackgroundMode(ctx.ui.theme);
@@ -9441,10 +9396,21 @@ export default function (pi: ExtensionAPI) {
 		trackRtkOriginalBashCommand((event as any)?.toolCallId, (event as any)?.args);
 	});
 
-	const cwd = process.cwd();
-	const sp = (path: string) => shortPath(cwd, path);
+	let intentNoticeUi: any;
+	const notifyIntentProblem = (message: string): void => {
+		try {
+			intentNoticeUi?.notify?.(message, "warning");
+		} catch { /* session ended */ }
+	};
+	// Read once per load: "model" changes the bash tool and the model's instructions, which are
+	// fixed when the tool registers, so every mode switch applies on the next start or /reload.
+	const bashIntentMode: BashIntentMode = normalizeBashIntentMode(readSettings().bashIntent ?? "model");
 
-	const readTool = createReadTool(cwd);
+	if (claudeUiEnabled()) {
+		const cwd = process.cwd();
+		const sp = (path: string) => shortPath(cwd, path);
+
+		const readTool = createReadTool(cwd);
 	pi.registerTool({
 		name: "read",
 		label: "read",
@@ -9507,16 +9473,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	let intentNoticeUi: any;
-	const notifyIntentProblem = (message: string): void => {
-		try {
-			intentNoticeUi?.notify?.(message, "warning");
-		} catch { /* session ended */ }
-	};
 	const bashTool = createBashTool(cwd);
-	// Read once per load: "model" changes the bash tool and the model's instructions, which are
-	// fixed when the tool registers, so every mode switch applies on the next start or /reload.
-	const bashIntentMode: BashIntentMode = normalizeBashIntentMode(readSettings().bashIntent ?? "model");
 	const bashIntentEnabled = bashIntentMode === "model";
 	configureLocalIntents(bashIntentMode === "local", (message) => notifyIntentProblem(message));
 	/** The label for a bash row, from the model's argument or the local model's cache, or "". */
@@ -9561,12 +9518,12 @@ export default function (pi: ExtensionAPI) {
 			const fileEdit = detectBashFileEdit(typeof bashParams.command === "string" ? bashParams.command : "");
 			// Local labels are asked for only here, when a command really runs, never on redraws.
 			if (bashIntentMode === "local" && typeof bashParams.command === "string") requestLocalIntent(bashParams.command);
-			const before = fileEdit ? snapshotBashFileEdit(cwd, fileEdit) : undefined;
+			const before = fileEdit ? await snapshotBashFileEdit(cwd, fileEdit) : undefined;
 			// Pi's typings lag its runtime, which builds PI_* env vars and cwd from ctx; forward ctx anyway.
 			const result = await (bashTool.execute as (...args: unknown[]) => ReturnType<typeof bashTool.execute>)(toolCallId, bashParams, signal, onUpdate, ctx);
 			if (fileEdit && before) {
 				const details = result.details && typeof result.details === "object" ? result.details : {};
-				(result as any).details = { ...details, fileEdits: collectBashFileEdits(cwd, fileEdit, before) };
+				(result as any).details = { ...details, fileEdits: await collectBashFileEdits(cwd, fileEdit, before) };
 			}
 			return result;
 		},
@@ -9839,7 +9796,7 @@ export default function (pi: ExtensionAPI) {
 			WRITE_EXISTED_BEFORE.set(toolCallId, existedBefore);
 			let old: string | null = null;
 			try {
-				if (fullPath && existedBefore) old = readFileSync(fullPath, "utf-8");
+				if (fullPath && existedBefore) old = await readFileAsync(fullPath, "utf-8");
 			} catch {
 				old = null;
 			}
@@ -10209,6 +10166,7 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 	});
+	}
 	pi.on("session_shutdown", async () => {
 		unsubscribeExtraToolDetailInput?.();
 		unsubscribeExtraToolDetailInput = undefined;
