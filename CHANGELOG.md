@@ -9,6 +9,16 @@
 
 ## 1.5.0 — 2026-11-18
 
+### Cross-platform local labels & Path resolution
+
+- **`bashIntent: "local"` now works beyond Apple silicon Macs.** Linux (including Android/Termux), Windows, and unsupported Mac configurations use a local OpenAI-compatible API, defaulting to Ollama at `http://127.0.0.1:11434/v1`. Configure `PI_CC_UI_INTENT_BASE_URL`, `PI_CC_UI_INTENT_MODEL`, and optionally `PI_CC_UI_INTENT_API_KEY`; cache files now use each OS's standard cache directory.
+- **The bundled web-search skill now selects a Python 3 launcher by OS.** POSIX systems try `python3` then `python`; Windows tries `py -3`, `python`, then `python3`. Pi agent and bundled questionnaire config paths now include their Windows locations.
+- **Robust cross-platform path resolution & short paths.** Improved home directory expansion (`~`, `~/...`, `~\...`) and short path formatting across Windows, macOS, and Linux.
+
+### Web Search CLI Skill
+
+- Added `scripts/run-search.mjs` launcher script ensuring robust cross-platform Python detection (`py`, `python`, `python3`) across Windows, macOS, and Linux.
+
 ### Performance & Memory
 
 - **Eliminated per-keystroke chat re-renders.** `isLoadedResourcesContainer` now caches `false` on non-header containers and skips chat message/tool components, preventing `Container.prototype.render` from calling `child.render(80)` across every message/tool on every keystroke and busting terminal-width render caches.
@@ -18,7 +28,7 @@
 
 ### Tests
 
-- Added `scripts/user-prompt-patch.test.ts` to verify `.ts` extension entrypoints in `package.json` and that `UserMessageComponent` renders the `❯` prompt marker and background band.
+- Added `scripts/bash-intent.test.ts` and `scripts/user-prompt-patch.test.ts` to verify bash intent handling, extension entrypoints in `package.json`, and UI component rendering.
 
 ## 1.0.113 — 2026-11-14
 

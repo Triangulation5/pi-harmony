@@ -5,11 +5,12 @@
 //   off    no labels
 //   model  the model writes the label as an extra `displaySummary` argument of each bash call.
 //          This adds a field to the bash tool and a line to the model's instructions.
-//   local  Apple's on-device model writes the label on this Mac (macOS 26+, Apple silicon).
-//          Nothing the model sees changes: the label lives only in this extension.
+//   local  A local model writes the label without changing anything the model sees.
+//          Supported Apple Silicon Macs use Foundation Models; other hosts use an
+//          OpenAI-compatible local endpoint (Ollama by default).
 //
-// Local mode runs a small Swift helper (HELPER_SOURCE below, compiled on first use and cached). Labels are requested when a command starts, never for commands that are only being
-// redrawn, and are cached on disk so a resumed session shows them without asking again.
+// The Apple helper is compiled on first use and cached. Labels are requested when a command
+// starts, never for commands that are only being redrawn, and cached on disk for resumed sessions.
 //
 // Since 1.0.112 the default is "model"; set "bashIntent" to "off"
 // (or run /tools intent off) to get the old, unlabeled behavior back.
@@ -34,13 +35,14 @@ export function normalizeBashIntentMode(value: unknown, defaultMode: BashIntentM
 	return defaultMode;
 }
 
-/** Why local labels cannot run here, or undefined when they can. */
-export function localIntentUnsupportedReason(): string | undefined {
-	if (process.env.PI_CC_UI_INTENT_HELPER) return undefined;
-	if (process.platform !== "darwin" || process.arch !== "arm64") return "local labels need a Mac with Apple silicon";
-	const darwin = Number.parseInt(release().split(".")[0] ?? "0", 10);
-	if (!(darwin >= 25)) return "local labels need macOS 26 or newer";
-	return undefined;
+/** Apple Foundation Models are an optional native backend; other hosts use the compatible API. */
+export function localIntentBackend(
+	platform = process.platform,
+	architecture = process.arch,
+	osRelease = release(),
+): "apple" | "compatible" {
+	const darwin = Number.parseInt(osRelease.split(".")[0] ?? "0", 10);
+	return platform === "darwin" && architecture === "arm64" && darwin >= 25 ? "apple" : "compatible";
 }
 
 /** Tidy a label from either source: no control characters, one line, at most 96 characters. */
@@ -125,7 +127,12 @@ const MAX_PENDING = 20;
 const MAX_WATCHED = 200;
 
 function cacheDir(): string {
-	return process.env.PI_CC_UI_CACHE_DIR || join(homedir(), "Library", "Caches", "pi-claude-code-ui");
+	if (process.env.PI_CC_UI_CACHE_DIR) return process.env.PI_CC_UI_CACHE_DIR;
+	if (process.platform === "win32") {
+		return join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "pi-claude-code-ui", "Cache");
+	}
+	if (process.platform === "darwin") return join(homedir(), "Library", "Caches", "pi-claude-code-ui");
+	return join(process.env.XDG_CACHE_HOME || join(homedir(), ".cache"), "pi-claude-code-ui");
 }
 
 const commandKey = (command: string) => createHash("sha256").update(command).digest("hex").slice(0, 24);
@@ -134,6 +141,7 @@ interface LocalIntentState {
 	enabled: boolean;
 	status: "idle" | "starting" | "ready" | "failed";
 	child?: ChildProcessWithoutNullStreams;
+	apiModel?: Promise<string>;
 	buffer: string;
 	nextId: number;
 	/** id → command, for requests the helper has not answered yet. */
@@ -185,6 +193,7 @@ export function configureLocalIntents(enabled: boolean, onProblem?: (message: st
 	s.status = "idle";
 	s.queue = [];
 	s.inFlight.clear();
+	s.apiModel = undefined;
 }
 
 function report(s: LocalIntentState, message: string): void {
@@ -287,7 +296,7 @@ export function requestLocalIntent(command: string): void {
 	if (!s.enabled || s.status === "failed" || !command.trim()) return;
 	if (localIntentFor(command) !== undefined) return;
 	if ([...s.inFlight.values()].includes(command) || s.queue.includes(command)) return;
-	if (s.status === "ready" && s.child) {
+	if (s.status === "ready" && (s.child || usesCompatibleBackend())) {
 		send(s, command);
 		return;
 	}
@@ -299,10 +308,108 @@ export function requestLocalIntent(command: string): void {
 function send(s: LocalIntentState, command: string): void {
 	const id = s.nextId++;
 	s.inFlight.set(id, command);
+	if (usesCompatibleBackend()) {
+		void sendCompatibleRequest(s, id, command);
+		return;
+	}
 	try {
 		s.child?.stdin.write(`${JSON.stringify({ id, command })}\n`);
 	} catch {
 		s.inFlight.delete(id);
+	}
+}
+
+function usesCompatibleBackend(): boolean {
+	return !process.env.PI_CC_UI_INTENT_HELPER
+		&& (Boolean(process.env.PI_CC_UI_INTENT_BASE_URL)
+			|| Boolean(process.env.PI_CC_UI_INTENT_MODEL)
+			|| Boolean(process.env.PI_CC_UI_INTENT_API_KEY)
+			|| localIntentBackend() === "compatible");
+}
+
+function compatibleApiRoot(): string {
+	const url = new URL(process.env.PI_CC_UI_INTENT_BASE_URL || "http://127.0.0.1:11434/v1");
+	if (url.protocol !== "http:" && url.protocol !== "https:") {
+		throw new Error("PI_CC_UI_INTENT_BASE_URL must use HTTP or HTTPS");
+	}
+	url.pathname = url.pathname.replace(/\/+$/, "").replace(/\/chat\/completions$/, "");
+	url.search = "";
+	url.hash = "";
+	return url.toString().replace(/\/$/, "");
+}
+
+function compatibleHeaders(): Record<string, string> {
+	const headers: Record<string, string> = { "content-type": "application/json" };
+	const apiKey = process.env.PI_CC_UI_INTENT_API_KEY;
+	if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+	return headers;
+}
+
+async function compatibleModel(s: LocalIntentState): Promise<string> {
+	const configured = process.env.PI_CC_UI_INTENT_MODEL?.trim();
+	if (configured) return configured;
+	if (!s.apiModel) {
+		s.apiModel = (async () => {
+			const response = await fetch(`${compatibleApiRoot()}/models`, {
+				headers: compatibleHeaders(),
+				signal: AbortSignal.timeout(10_000),
+			});
+			if (!response.ok) throw new Error(`model discovery returned HTTP ${response.status}`);
+			const result = await response.json() as { data?: { id?: unknown }[] };
+			const model = result.data?.find((item) => typeof item.id === "string")?.id;
+			if (typeof model !== "string") {
+				throw new Error("the endpoint returned no models; set PI_CC_UI_INTENT_MODEL to a model ID");
+			}
+			return model;
+		})();
+	}
+	return s.apiModel;
+}
+
+async function sendCompatibleRequest(s: LocalIntentState, id: number, command: string): Promise<void> {
+	try {
+		const model = await compatibleModel(s);
+		const response = await fetch(`${compatibleApiRoot()}/chat/completions`, {
+			method: "POST",
+			headers: compatibleHeaders(),
+			body: JSON.stringify({
+				model,
+				messages: [
+					{
+						role: "system",
+						content: "Label shell commands for a terminal UI. Reply with only what the command does, in at most eight words, starting with an imperative verb. No quotes, command syntax, or final period.",
+					},
+					{ role: "user", content: `Command: ${command.slice(0, 2000)}` },
+				],
+				temperature: 0,
+				max_tokens: 24,
+			}),
+			signal: AbortSignal.timeout(30_000),
+		});
+		if (!response.ok) {
+			const detail = (await response.text()).trim().slice(0, 300);
+			throw new Error(`local model returned HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+		}
+		const result = await response.json() as { choices?: { message?: { content?: unknown } }[] };
+		const content = result.choices?.[0]?.message?.content;
+		const summary = typeof content === "string"
+			? content
+			: Array.isArray(content)
+				? content.map((part) => typeof part === "object" && part !== null && "text" in part
+					? String(part.text)
+					: "").join("")
+				: "";
+		if (s.status === "failed") return;
+		const original = s.inFlight.get(id);
+		if (original === undefined) return;
+		s.inFlight.delete(id);
+		const label = cleanIntentLabel(summary);
+		if (label) deliver(s, original, label);
+		else s.watchers.delete(original);
+	} catch (error) {
+		if (s.enabled && s.status !== "failed") {
+			fail(s, `Local bash labels are off: ${error instanceof Error ? error.message : String(error)}. Check the local OpenAI-compatible endpoint, model, and API key.`);
+		}
 	}
 }
 
@@ -340,7 +447,7 @@ function onHelperLine(s: LocalIntentState, line: string): void {
 		return;
 	}
 	if (typeof message?.unavailable === "string") {
-		fail(s, `Local bash labels are off: Apple's on-device model is not available (${message.unavailable}). Turn on Apple Intelligence, or use /tools intent model|off.`);
+		fail(s, `Local bash labels are off: Apple's on-device model is not available (${message.unavailable}). Use an OpenAI-compatible local endpoint or /tools intent model|off.`);
 		return;
 	}
 	const command = s.inFlight.get(message?.id);
@@ -376,6 +483,13 @@ async function helperPath(): Promise<string> {
 
 async function startHelper(s: LocalIntentState): Promise<void> {
 	s.status = "starting";
+	if (usesCompatibleBackend()) {
+		s.status = "ready";
+		const queued = s.queue;
+		s.queue = [];
+		for (const command of queued) send(s, command);
+		return;
+	}
 	let path: string;
 	try {
 		path = await helperPath();

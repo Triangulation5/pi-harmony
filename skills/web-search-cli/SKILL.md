@@ -12,8 +12,12 @@ When native model web search is unavailable or unsupported, search programmatica
 Run the bundled script from this skill directory:
 
 ```bash
-python3 scripts/search.py "your query here"
+node scripts/run-search.mjs "your query here"
 ```
+
+The launcher uses `python3` and then `python` on Unix-like systems. On Windows it tries
+the Python launcher (`py -3`), then `python`, then `python3`, so the skill works with
+standard Windows Python installs as well as Git Bash.
 
 The script sends an HTTP POST request to DuckDuckGo Lite, extracts result titles and destination URLs, and removes DuckDuckGo redirect tracking parameters.
 

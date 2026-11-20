@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { readFile as readFileAsync } from "node:fs/promises";
-import { basename, dirname, extname, relative, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import type {
 	BashToolDetails,
@@ -46,6 +46,7 @@ import {
 } from "@earendil-works/pi-tui";
 import * as PiTui from "@earendil-works/pi-tui";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 
 // `diff` is only needed once a diff is actually rendered, so load it on first use
 // instead of at extension load. The proxy keeps every `Diff.fn(...)` call site as is.
@@ -99,7 +100,6 @@ import {
 	cleanIntentLabel,
 	configureLocalIntents,
 	localIntentFor,
-	localIntentUnsupportedReason,
 	normalizeBashIntentMode,
 	requestLocalIntent,
 	watchLocalIntent,
@@ -186,8 +186,9 @@ interface SettingsFile {
 	/**
 	 * Short purpose labels on bash rows. `model` (default): the model writes them as an
 	 * extra bash argument (changes the bash tool and the model's instructions; `true` means this);
-	 * `local`: Apple's on-device model writes them on this Mac, without changing anything the model
-	 * sees. Applied when the extension loads (pi start or /reload).
+	 * `local`: a local model writes them without changing anything the model sees. Uses Apple's
+	 * on-device model on supported Macs, otherwise an OpenAI-compatible local endpoint.
+	 * Applied when the extension loads (pi start or /reload).
 	 */
 	bashIntent?: boolean | "off" | "model" | "local";
 	bashCollapsedLines?: number;
@@ -4276,9 +4277,10 @@ function patchToolExecutionRenderers(): void {
 function shortPath(cwd: string, filePath: string): string {
 	if (!filePath) return "";
 	const rel = relative(cwd, filePath);
-	if (!rel.startsWith("..") && !rel.startsWith("/")) return rel || ".";
-	const home = process.env.HOME ?? "";
-	return home ? filePath.replace(home, "~") : filePath;
+	if (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)) return rel || ".";
+	const homeRelative = relative(homedir(), filePath);
+	if (homeRelative === ".." || homeRelative.startsWith(`..${sep}`) || isAbsolute(homeRelative)) return filePath;
+	return homeRelative ? `~${sep}${homeRelative}` : "~";
 }
 
 // ---------------------------------------------------------------------------
@@ -8379,8 +8381,13 @@ interface BashFileEditRecord {
 const MAX_BASH_SNAPSHOT_BYTES = 1_000_000;
 
 function resolveBashEditPath(cwd: string, edit: BashFileEdit, path: string): string {
-	const home = process.env.HOME ?? "";
-	const expand = (value: string) => (home && (value === "~" || value.startsWith("~/")) ? `${home}${value.slice(1)}` : value);
+	const expand = (value: string) => {
+		if (value === "~") return homedir();
+		if (value.startsWith("~/") || (process.platform === "win32" && value.startsWith("~\\"))) {
+			return resolve(homedir(), value.slice(2));
+		}
+		return value;
+	};
 	return resolve(edit.cd ? resolve(cwd, expand(edit.cd)) : cwd, expand(path));
 }
 
@@ -8532,7 +8539,7 @@ export default function (pi: ExtensionAPI) {
 	const INTENT_DESCRIPTIONS: Record<string, string> = {
 		off: "No labels on bash rows",
 		model: "The model writes a short purpose with each bash call (adds a field to the bash tool and a line to its instructions; default)",
-		local: "Apple's on-device model writes the purpose on this Mac; nothing the model sees changes (macOS 26+, Apple silicon)",
+		local: "A local model writes the purpose without changing what the model sees (Apple on-device on supported Macs, otherwise a local OpenAI-compatible endpoint)",
 		status: "Show the current mode",
 	};
 	const booleanMode = (raw: string | undefined, current: boolean): boolean | "status" | undefined => {
@@ -8672,10 +8679,7 @@ export default function (pi: ExtensionAPI) {
 				const next = arg as BashIntentMode;
 				writeSettingsKey("bashIntent", next);
 				if (!ctx.hasUI) return;
-				const unsupported = next === "local" ? localIntentUnsupportedReason() : undefined;
-				if (unsupported) {
-					ctx.ui.notify(`Bash labels → local saved, but ${unsupported}; it will stay off here.`, "warning");
-				} else if (next === bashIntentMode) {
+				if (next === bashIntentMode) {
 					ctx.ui.notify(`Bash labels: ${next} (already active)`, "info");
 				} else {
 					ctx.ui.notify(`Bash labels → ${next}. Applies after /reload or on the next start.`, "info");
@@ -9269,10 +9273,6 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		intentNoticeUi = ctx.ui;
-		if (localIntentProblem && !localIntentProblemShown) {
-			localIntentProblemShown = true;
-			notifyIntentProblem(`Bash labels: ${localIntentProblem}, so they are off. /tools intent model|off`);
-		}
 		patchUiNotifications(ctx.ui);
 		patchAgentWidget(ctx.ui);
 		installPromptMarkerEditor(ctx);
@@ -9403,7 +9403,6 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	let intentNoticeUi: any;
-	let localIntentProblemShown = false;
 	const notifyIntentProblem = (message: string): void => {
 		try {
 			intentNoticeUi?.notify?.(message, "warning");
@@ -9414,8 +9413,7 @@ export default function (pi: ExtensionAPI) {
 	// fixed when the tool registers, so every mode switch applies on the next start or /reload.
 	const bashIntentMode: BashIntentMode = normalizeBashIntentMode(readSettings().bashIntent ?? "model");
 	const bashIntentEnabled = bashIntentMode === "model";
-	const localIntentProblem = bashIntentMode === "local" ? localIntentUnsupportedReason() : undefined;
-	configureLocalIntents(bashIntentMode === "local" && !localIntentProblem, (message) => notifyIntentProblem(message));
+	configureLocalIntents(bashIntentMode === "local", (message) => notifyIntentProblem(message));
 	/** The label for a bash row, from the model's argument or the local model's cache, or "". */
 	const bashIntentLabel = (args: any, ctx: any): string => {
 		if (bashIntentMode === "model") return cleanIntentLabel(args?.displaySummary);

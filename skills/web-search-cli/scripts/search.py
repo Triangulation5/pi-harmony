@@ -50,7 +50,7 @@ def search(query, limit=10):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print('Usage: python3 search.py "your query here"')
+        print('Usage: node scripts/run-search.mjs "your query here"')
         sys.exit(1)
 
     query = " ".join(sys.argv[1:])

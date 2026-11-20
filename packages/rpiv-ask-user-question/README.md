@@ -47,7 +47,7 @@ When the model asks several things at once, `Tab` moves between them and a Submi
 
 ## Configuration
 
-Optional. Settings live in `~/.config/rpiv-ask-user-question/config.json`; the file is read, never written.
+Optional. Settings live in `~/.config/rpiv-ask-user-question/config.json` (`%USERPROFILE%\.config\rpiv-ask-user-question\config.json` on Windows); the file is read, never written.
 
 | Setting | What it does | Default |
 | --- | --- | --- |

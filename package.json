@@ -1,6 +1,6 @@
 {
   "name": "pi-harmony",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "A cohesive Pi workspace with polished interaction, tools, skills, and question workflows",
   "keywords": [
     "pi-package",
@@ -54,6 +54,7 @@
     "extensions/startup-animation.ts",
     "skills/web-search-cli/SKILL.md",
     "skills/web-search-cli/scripts/search.py",
+    "skills/web-search-cli/scripts/run-search.mjs",
     "themes/vague.json",
     "packages/rpiv-ask-user-question/**",
     "config/config.example.json",

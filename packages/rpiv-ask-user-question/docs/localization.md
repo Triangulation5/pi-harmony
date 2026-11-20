@@ -25,7 +25,7 @@ English.
 With the SDK installed, the locale resolves in this order, first hit wins:
 
 1. `pi --locale <code>` on the command line
-2. `~/.config/rpiv-i18n/locale.json`
+2. `~/.config/rpiv-i18n/locale.json` (`%USERPROFILE%\.config\rpiv-i18n\locale.json` on Windows)
 3. `LANG` / `LC_ALL` from the environment
 4. English
 

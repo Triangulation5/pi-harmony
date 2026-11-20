@@ -37,7 +37,7 @@ Built-in tools (`read`, `bash`, `grep`, `find`, `ls`, `edit`, `write`), MCP tool
 
 ![A two-part edit shown as a diff](https://raw.githubusercontent.com/FammasMaz/pi-cc-tools/master/docs/media/edit-diff.png)
 
-Shell commands that only change files are drawn the same way. `sed -i`, `perl -pi`, heredocs (`cat > file <<EOF`, `tee`) and `echo ... > file` show up as `Edit (sed) pyproject.toml` or `Create (heredoc) CHANGELOG.md`, with a diff of what actually changed on disk. The command runs unchanged and the model sees its normal output. Anything ambiguous, like a pipe or a variable, stays a regular bash row.
+POSIX shell commands that only change files are drawn the same way. `sed -i`, `perl -pi`, heredocs (`cat > file <<EOF`, `tee`) and `echo ... > file` show up as `Edit (sed) pyproject.toml` or `Create (heredoc) CHANGELOG.md`, with a diff of what actually changed on disk. This applies on Unix-like systems and when using Bash on Windows (such as Git Bash); native PowerShell commands are not parsed as Bash edits. The command runs unchanged and the model sees its normal output. Anything ambiguous, like a pipe or a variable, stays a regular bash row.
 
 ![sed and heredoc commands shown as edits](https://raw.githubusercontent.com/FammasMaz/pi-cc-tools/master/docs/media/shell-edits.png)
 
@@ -49,7 +49,7 @@ While a tool runs, the working line names it: `Running npm test...`, `Reading st
 
 ## Bash labels
 
-With labels on, a bash row shows what the command is for instead of the command itself: `Bash Run the test suite` rather than `Bash python3 -m unittest -q 2>&1 | tail -4`. The label is plain text, so it reads differently from a command. Click the row or press `Ctrl+O` to see the full command and its output.
+With labels on, a bash row shows what the command is for instead of the command itself: `Bash Run the test suite` rather than `Bash npm test`. The label is plain text, so it reads differently from a command. Click the row or press `Ctrl+O` to see the full command and its output.
 
 ![Labelled bash rows, and one clicked open to show its command](https://raw.githubusercontent.com/FammasMaz/pi-cc-tools/master/docs/media/bash-labels.gif)
 
@@ -57,7 +57,7 @@ With labels on, a bash row shows what the command is for instead of the command 
 
 - `model` (default since 1.0.112): the model writes the label as an extra argument of each bash call. This adds a field to the bash tool and a line to the model's instructions. There is no extra request; the label costs a few output tokens on each call. Set `"bashIntent": "off"` (or run `/tools intent off`) to go back to plain commands.
 - `off`: no labels; rows show the command.
-- `local`: Apple's on-device model writes the label on your Mac, so nothing the model sees changes. It needs macOS 26 or newer on Apple silicon with Apple Intelligence turned on, and the Xcode command line tools for a one-time build of a small helper. The row shows the command until the label arrives, about 0.3 to 0.6 seconds after the command starts. Labels are cached, so a resumed session shows them without asking again.
+- `local`: a local model writes the label without changing anything the model sees. Supported Apple silicon Macs use Apple's on-device model (macOS 26+, Apple Intelligence, and Xcode command line tools for a one-time helper build). Linux, Android, Windows, other Macs, and any host with an explicitly configured endpoint use an OpenAI-compatible local API. The default is Ollama at `http://127.0.0.1:11434/v1`; install a model first, and the first model returned by `/v1/models` is selected. Set `PI_CC_UI_INTENT_BASE_URL`, `PI_CC_UI_INTENT_MODEL`, and optionally `PI_CC_UI_INTENT_API_KEY` to use another OpenAI-compatible server or choose a model explicitly. Labels are cached, so resumed sessions show them without asking again.
 
 The choice applies on the next start or after `/reload`, because the model mode changes the bash tool itself. Collapsed groups show only the sentence summary; expand a group to see each command's label.
 
@@ -107,7 +107,7 @@ If you already know what extensions, skills, and prompts you are using and want 
 - `/tools header on`: show all loaded resources on startup.
 - `/tools header status`: check whether header details are currently on or off.
 
-You can also configure `"headerDetails": false` (or `"quietStartup": "header"`) in `.pi/settings.json` or `~/.pi/agent/settings.json`.
+You can also configure `"headerDetails": false` (or `"quietStartup": "header"`) in `.pi/settings.json` or the Pi agent settings file (`~/.pi/agent/settings.json`, `%USERPROFILE%\.pi\agent\settings.json` on Windows).
 
 ## Smaller things
 
@@ -145,7 +145,7 @@ Commands that change a setting save it to the settings file, and the change appl
 
 ## Settings
 
-Settings are read from `.pi/settings.json` in the project and from the agent settings file, `$PI_CODING_AGENT_DIR/settings.json` (by default `~/.pi/agent/settings.json`). The values below are the defaults.
+Settings are read from `.pi/settings.json` in the project and from the agent settings file, `$PI_CODING_AGENT_DIR/settings.json` (by default `~/.pi/agent/settings.json`, or `%USERPROFILE%\.pi\agent\settings.json` on Windows). The values below are the defaults.
 
 ```json
 {
@@ -201,7 +201,7 @@ The screenshots on this page use `"toolBackground": "transparent"`.
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `bashIntent` | `model` (since 1.0.112) | Labels on bash rows in place of the command: `model` (since 1.0.112; the model writes them; changes the bash tool and its instructions), `local` (Apple's on-device model writes them on this Mac), or `off` for plain commands as before 1.0.112. `true` means `model`. Applies on the next start or `/reload` |
+| `bashIntent` | `model` (since 1.0.112) | Labels on bash rows in place of the command: `model` (the model writes them; changes the bash tool and its instructions), `local` (Apple's on-device model on supported Macs, otherwise an OpenAI-compatible local API), or `off` for plain commands. `true` means `model`. Applies on the next start or `/reload` |
 | `bashCollapsedLines` | `10` | Output lines shown for a collapsed bash row |
 | `bashCommandPreviewLines` | `0` | Lines of a multi-line command shown under a running or failed bash row. `Ctrl+O` always shows the whole command |
 | `liveToolPreview` | `false` | Show the latest output lines under a running tool |

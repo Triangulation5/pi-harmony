@@ -9,6 +9,9 @@ wrong.
 ~/.config/rpiv-ask-user-question/config.json
 ```
 
+On Windows, the default is `%USERPROFILE%\.config\rpiv-ask-user-question\config.json`.
+`XDG_CONFIG_HOME` can override the config directory on any platform.
+
 The file is optional — with no config at all, every setting takes its default. This
 package only ever *reads* the file; it never creates, writes or chmods it, so its
 permissions are whatever you give it.
@@ -33,10 +36,11 @@ A complete example:
 
 1. `$XDG_CONFIG_HOME/rpiv-ask-user-question/config.json`, if `XDG_CONFIG_HOME` is set,
    non-empty and absolute. A leading `~` is expanded first; a relative value is ignored.
-   Unset or ignored, the directory falls back to `~/.config`.
+   Unset or ignored, the directory falls back to `~/.config` (or `%USERPROFILE%\.config`
+   on Windows).
 2. If that file does not exist, the legacy path `~/.config/rpiv-ask-user-question/config.json`
    is read. This path deliberately ignores `XDG_CONFIG_HOME`, so an existing config keeps
-   working after you set the variable.
+   working after you set the variable; on Windows, this is `%USERPROFILE%\.config\rpiv-ask-user-question\config.json`.
 3. Neither present: all defaults.
 
 If the XDG-path file exists, its result wins even when it is malformed — there is no
