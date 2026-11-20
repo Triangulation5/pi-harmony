@@ -272,8 +272,14 @@ interface SettingsFile {
 	 * or true (hide both logo and details).
 	 */
 	quietStartup?: boolean | "header";
-	/** Play the Tetris-style startup animation on a fresh interactive session. */
-	startupAnimation?: boolean;
+	/** Play the startup animation on a fresh interactive session (boolean or style name). */
+	startupAnimation?: boolean | string;
+	/** Enable Claude Code UI styling (❯ prompt marker, custom spinner, tool chrome). Defaults to true. */
+	claudeUi?: boolean;
+}
+
+function claudeUiEnabled(): boolean {
+	return readSettings().claudeUi !== false;
 }
 
 // Stale-while-revalidate: cold read is sync, later reads never block on disk (see settings-store.ts).
@@ -449,6 +455,7 @@ function getGlobalPiTheme(): unknown {
 
 /** Pi's ToolExecutionComponent reads `theme` from globalThis — keep it in sync with ctx.ui.theme. */
 function applyToolBackgroundMode(theme: unknown): void {
+	if (!claudeUiEnabled()) return;
 	syncToolBackgroundMode();
 	const targets = new Set<unknown>();
 	if (theme) targets.add(theme);
@@ -3757,6 +3764,7 @@ function patchUserMessageRender(): void {
 		};
 	}
 	proto.render = function patchedUserMessageRender(width: number) {
+		if (!claudeUiEnabled()) return originalRender.call(this, width);
 		const cached = messageRenderCacheHit(this, width);
 		if (cached) return cached;
 		if ((this.outputPad ?? 1) < USER_MESSAGE_PAD) this.rebuild?.();
@@ -3799,6 +3807,7 @@ function patchUserMessageRender(): void {
 const PROMPT_EDITOR_FLAG = Symbol.for("pi-claude-style-tools:prompt-marker-editor");
 
 function installPromptMarkerEditor(ctx: any): void {
+	if (!claudeUiEnabled()) return;
 	const ui = ctx?.ui;
 	if (typeof ui?.setEditorComponent !== "function" || typeof ui?.getEditorComponent !== "function") return;
 	const previous = ui.getEditorComponent();
@@ -8493,25 +8502,27 @@ function renderBashFileEditResult(edit: BashFileEdit, records: BashFileEditRecor
 // ===========================================================================
 
 export default function (pi: ExtensionAPI) {
-	patchTerminalWriteTagScrubber();
-	patchToolExecutionBackgroundSync();
-	patchToolRenderCacheInvalidation();
-	patchReadImageExpansion();
-	patchFullscreenHoverExit();
-	patchFullscreenCopySkipsChrome();
-	patchScrollViewReveal();
-	patchToolFullscreenMouse();
-	patchContainerParentTracking();
-	patchGlobalToolBorders();
-	patchCustomMessageRender();
-	patchUserMessageRender();
-	patchAssistantMessages();
-	patchAssistantFullscreenMouse();
-	patchToolExecutionRenderers();
-	patchBashFileEditGrouping();
-	applyDiffPalette();
-	registerThinkingLabels(pi);
-	syncExtraToolDetailMode();
+	if (claudeUiEnabled()) {
+		patchTerminalWriteTagScrubber();
+		patchToolExecutionBackgroundSync();
+		patchToolRenderCacheInvalidation();
+		patchReadImageExpansion();
+		patchFullscreenHoverExit();
+		patchFullscreenCopySkipsChrome();
+		patchScrollViewReveal();
+		patchToolFullscreenMouse();
+		patchContainerParentTracking();
+		patchGlobalToolBorders();
+		patchCustomMessageRender();
+		patchUserMessageRender();
+		patchAssistantMessages();
+		patchAssistantFullscreenMouse();
+		patchToolExecutionRenderers();
+		patchBashFileEditGrouping();
+		applyDiffPalette();
+		registerThinkingLabels(pi);
+		syncExtraToolDetailMode();
+	}
 
 	const toggleExtraToolDetail = (ctx: any): void => {
 		setExtraToolDetailMode(!extraToolOutputExpanded);
@@ -8541,6 +8552,7 @@ export default function (pi: ExtensionAPI) {
 		"intent",
 		"header",
 		"startup",
+		"claude-ui",
 		"status",
 	] as const;
 	const INTENT_DESCRIPTIONS: Record<string, string> = {
@@ -8568,7 +8580,8 @@ export default function (pi: ExtensionAPI) {
 			`Bash labels: ${bashIntentMode}`,
 			`Extra detail: ${extraToolOutputExpanded ? "on" : "off"} (${rawKeyHint("ctrl+shift+o", "toggle")})`,
 			`Header details: ${headerDetailsEnabled() ? "on" : "off"} (/tools header on|off|toggle)`,
-			`Startup animation: ${readSettings().startupAnimation === true ? "on" : "off"} (/tools startup on|off|toggle)`,
+			`Startup animation: ${readSettings().startupAnimation ? String(readSettings().startupAnimation === true ? "tetris" : readSettings().startupAnimation) : "off"} (/tools startup on|off|toggle|tetris|matrix|fireworks|wave|retro)`,
+			`Claude UI style: ${claudeUiEnabled() ? "on" : "off"} (/tools claude-ui on|off|toggle)`,
 		].join("\n"), "info");
 	};
 	pi.registerCommand("tools", {
@@ -8589,7 +8602,8 @@ export default function (pi: ExtensionAPI) {
 							: m === "thinking-label" ? "Show a ∴ Thinking: label above expanded thinking"
 							: m === "intent" ? "Purpose labels on bash rows: model (default), local, or off"
 							: m === "header" ? "Show or hide startup header details ([Skills], [Prompts], [Extensions])"
-							: m === "startup" ? "Play or skip the Tetris startup animation"
+							: m === "startup" ? "Configure startup animation (on, off, toggle, or style: tetris, matrix, fireworks, wave, retro)"
+							: m === "claude-ui" ? "Enable or disable Claude Code UI styling (❯ prompt, spinner, tool chrome)"
 							: m === "detail" ? "Toggle Ctrl+Shift+O extra-detail mode"
 							: m === "status" ? "Show tool UI settings"
 							: m === "outlines" ? "Horizontal rules around each tool"
@@ -8605,6 +8619,37 @@ export default function (pi: ExtensionAPI) {
 						value: `header ${m}`,
 						label: m,
 						description: `${m} startup header details ([Skills], [Prompts], [Extensions])`,
+					}));
+			}
+			if (first === "startup") {
+				const second = parts[1] ?? "";
+				const startupOptions = [
+					{ value: "on", desc: "Enable startup animation (default: tetris)" },
+					{ value: "off", desc: "Disable startup animation" },
+					{ value: "toggle", desc: "Toggle startup animation on/off" },
+					{ value: "status", desc: "Show current startup animation setting" },
+					{ value: "tetris", desc: "Falling Tetris blocks (default)" },
+					{ value: "matrix", desc: "Digital rain reveal" },
+					{ value: "fireworks", desc: "Particle burst into logo" },
+					{ value: "wave", desc: "Scanline sweep reveal" },
+					{ value: "retro", desc: "Glitchy CRT static reveal" },
+				];
+				return startupOptions
+					.filter((o) => o.value.startsWith(second))
+					.map((o) => ({
+						value: `startup ${o.value}`,
+						label: o.value,
+						description: o.desc,
+					}));
+			}
+			if (first === "claude-ui") {
+				const second = parts[1] ?? "";
+				return TOOL_BOOL_MODES
+					.filter((m) => m.startsWith(second))
+					.map((m) => ({
+						value: `claude-ui ${m}`,
+						label: m,
+						description: `${m} Claude Code UI styling (❯ prompt, spinner, tool chrome)`,
 					}));
 			}
 			if (first === "activity") {
@@ -8782,24 +8827,56 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (sub === "startup") {
+				const { STARTUP_STYLES, getStartupStyle } = await import("./startup-animation.ts");
 				const raw = (parts[1] || "toggle").toLowerCase();
-				const current = readSettings().startupAnimation === true;
-				const next =
-					raw === "status" ? undefined
-					: raw === "on" ? true
-					: raw === "off" ? false
-					: raw === "" || raw === "toggle" ? !current
-					: undefined;
-				if (next === undefined) {
-					if (raw === "status") {
-						ctx.ui.notify(`Startup animation: ${current ? "on" : "off"} (/tools startup on|off|toggle)`, "info");
-					} else {
-						ctx.ui.notify("Usage: /tools startup on|off|toggle|status", "error");
-					}
+				const currentStyle = getStartupStyle();
+				const isEnabled = currentStyle !== "off";
+
+				if (raw === "status") {
+					ctx.ui.notify(
+						`Startup animation: ${currentStyle} (/tools startup on|off|toggle|${STARTUP_STYLES.join("|")})`,
+						"info",
+					);
 					return;
 				}
-				writeSettingsKey("startupAnimation", next);
-				ctx.ui.notify(`Startup animation: ${next ? "on" : "off"} (takes effect on the next start)`, "info");
+				if (raw === "on") {
+					writeSettingsKey("startupAnimation", true);
+					ctx.ui.notify("Startup animation: on (tetris) (takes effect on the next start)", "info");
+					return;
+				}
+				if (raw === "off") {
+					writeSettingsKey("startupAnimation", false);
+					ctx.ui.notify("Startup animation: off (takes effect on the next start)", "info");
+					return;
+				}
+				if (raw === "" || raw === "toggle") {
+					const next = !isEnabled;
+					writeSettingsKey("startupAnimation", next);
+					ctx.ui.notify(`Startup animation: ${next ? "on (tetris)" : "off"} (takes effect on the next start)`, "info");
+					return;
+				}
+				if ((STARTUP_STYLES as readonly string[]).includes(raw)) {
+					writeSettingsKey("startupAnimation", raw);
+					ctx.ui.notify(`Startup animation: ${raw} (takes effect on the next start)`, "info");
+					return;
+				}
+				ctx.ui.notify(`Usage: /tools startup on|off|toggle|status|${STARTUP_STYLES.join("|")}`, "error");
+				return;
+			}
+
+			if (sub === "claude-ui") {
+				const current = claudeUiEnabled();
+				const next = booleanMode(parts[1], current);
+				if (next === "status") {
+					ctx.ui.notify(`Claude UI style: ${current ? "on" : "off"} (/tools claude-ui on|off|toggle)`, "info");
+					return;
+				}
+				if (next === undefined) {
+					ctx.ui.notify("Usage: /tools claude-ui on|off|toggle|status", "error");
+					return;
+				}
+				writeSettingsKey("claudeUi", next);
+				ctx.ui.notify(`Claude UI style: ${next ? "on" : "off"} (takes effect on the next start)`, "info");
 				return;
 			}
 
@@ -9317,10 +9394,11 @@ export default function (pi: ExtensionAPI) {
 			(event as { reason?: string })?.reason === "startup"
 			&& ctx.mode === "tui"
 			&& ctx.hasUI
-			&& readSettings().startupAnimation === true
 		) {
-			const { playStartupAnimation } = await import("./startup-animation.ts");
-			await playStartupAnimation(event, ctx);
+			const { getStartupStyle, playStartupAnimation } = await import("./startup-animation.ts");
+			if (getStartupStyle() !== "off") {
+				await playStartupAnimation(event, ctx);
+			}
 		}
 		const reason = (event as { reason?: string })?.reason;
 		if (reason === "resume" || reason === "new" || reason === "fork") {

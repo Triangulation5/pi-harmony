@@ -1392,6 +1392,7 @@ const SPINNER_SHIMMER_FRAME_MS = 100;
 
 
 export default function (pi: ExtensionAPI) {
+    if (readMergedSettings().claudeUi === false) return;
     let agentStartTime = 0;
     let turnStartTime = 0;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
