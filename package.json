@@ -1,6 +1,6 @@
 {
   "name": "pi-harmony",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "description": "A cohesive Pi workspace with polished interaction, tools, skills, and question workflows",
   "keywords": [
     "pi-package",
@@ -38,16 +38,19 @@
   },
   "files": [
     "extensions/index.ts",
+    "extensions/commands/**",
     "extensions/bash/**",
     "extensions/session/**",
     "extensions/settings/**",
     "extensions/terminal/**",
+    "extensions/markdown/**",
     "extensions/shared/**",
     "skills/web-search-cli/SKILL.md",
     "skills/web-search-cli/scripts/search.py",
     "skills/web-search-cli/scripts/run-search.mjs",
     "themes/vague.json",
     "packages/rpiv-ask-user-question/**",
+    "packages/rpiv-todo/**",
     "config/config.example.json",
     "README.md",
     "CHANGELOG.md"

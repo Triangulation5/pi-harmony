@@ -7,7 +7,11 @@
 - Rebranded the broader Pi workspace as `pi-harmony`.
 - Bundled `rpiv-ask-user-question` and the `web-search-cli` skill with the existing UI and tools.
 
-## Unreleased — 2026-11-20
+## 1.6.0 — 2026-11-21
+
+### Bundled Todo Tracking (`rpiv-todo`)
+
+- **Added optional `rpiv-todo` package** (`packages/rpiv-todo/`) with task tracking, live overlay (`/todos`), and multi-language localization (`locales/`). Off by default; enable or disable with `/tools todo on|off|toggle|status`.
 
 ### Startup animation styles & controls
 
@@ -22,10 +26,11 @@
 
 ### Architecture & Modularization
 
-- **Reorganized extensions into domain-oriented directories**: `extensions/bash/`, `extensions/session/`, `extensions/settings/`, `extensions/terminal/animations/`, `extensions/terminal/themes/`, and `extensions/shared/`.
+- **Reorganized extensions into domain-oriented directories**: `extensions/bash/`, `extensions/commands/`, `extensions/markdown/`, `extensions/session/`, `extensions/settings/`, `extensions/terminal/animations/`, `extensions/terminal/diff-rendering/`, `extensions/terminal/messages/`, `extensions/terminal/themes/`, `extensions/terminal/tool-groups/`, `extensions/terminal/tool-renderers/`, `extensions/terminal/tools/`, and `extensions/shared/`.
+- **Extracted `extensions/index.ts` and `extensions/terminal/animations/spinner.ts` internals into focused modules** covering slash commands (`/tools`, `/theme`, `/spinner`), math rendering, diff parsing/highlighting/layout, tool group state/formatting, tool previews (`apply_patch`, `bash`, `edit`, `read`/`search`), message/thinking patches, and spinner runtime/tips/verbs/loader.
 - **Centralized shared settings & path helpers** (`writeSettingsKey` in `extensions/settings/store.ts`, `getAgentDir` in `extensions/settings/path.ts`) and moved bash file-edit snapshot helpers into `extensions/bash/file-edit.ts`.
 - **Moved `packages/rpiv-ask-user-question` source into `src/`** while preserving package exports, `locales/`, `docs/`, and independent package boundaries.
-- **Reorganized tests into `tests/` by subsystem** (`bash/`, `session/`, `settings/`, `terminal/`, `interface/`, `integrations/`).
+- **Reorganized tests into `tests/` by subsystem** (`bash/`, `session/`, `settings/`, `terminal/`, `interface/`, `integrations/`), and added `tests/interface/thinking-labels.test.ts` and `tests/terminal/apply-patch-preview.test.ts`.
 
 ### Performance
 

@@ -8,7 +8,7 @@ A [Pi](https://github.com/earendil-works/pi) extension that transforms the defau
 - 🎮 **30+ configuration options** via `/tools` and `/theme` commands
 - 🧩 **Rich features** — spinners, startup animations, live thinking, subagents support
 - 🌈 **Theme-aware** — follows your terminal colors or Pi's built-in themes
-- 🔧 **Bundled tools** — `web-search-cli` skill and interactive questionnaires
+- 🔧 **Bundled tools** — `web-search-cli`, interactive questionnaires, and optional todo tracking
 
 ---
 
@@ -36,7 +36,7 @@ pi install /path/to/pi-harmony
 | **Startup Animation** | Optional Tetris-style piece assembly (toggle with `/tools startup`) |
 | **Theme Harmony** | Automatic terminal color adaptation or custom Pi theming |
 | **Subagents** | Unified UI for parallel and parent/child agent workflows |
-| **Bundled Tools** | `web-search-cli` skill and `rpiv-ask-user-question` questionnaire |
+| **Bundled Tools** | `web-search-cli`, `rpiv-ask-user-question`, and optional `rpiv-todo` |
 
 ---
 
@@ -181,6 +181,7 @@ Expanded rows show each agent's tool usage, tokens, time, and result.
 /tools thinking-label on|off|toggle    # Show "∴ Thinking:" label
 /tools intent off|model|local|status   # Bash label source
 /tools detail on|off|toggle            # High preview limits
+/tools todo on|off|toggle|status       # Optional todo tool and overlay (off by default)
 ```
 
 ### `/theme` — Visual Customization
@@ -279,6 +280,9 @@ See:
 - [Package README](packages/rpiv-ask-user-question/README.md)
 - [Configuration Documentation](packages/rpiv-ask-user-question/docs/configuration.md)
 - [Localization](packages/rpiv-ask-user-question/locales/)
+
+### Todo (`rpiv-todo`)
+Optional task tracking tool with a live overlay and `/todos` command. It is off by default; enable or disable it with `/tools todo on|off|toggle|status`.
 
 ---
 
