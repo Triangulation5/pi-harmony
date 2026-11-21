@@ -1,5 +1,8 @@
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { isAbsolute, join } from "node:path";
 import type { GuidanceFields } from "@juicesharp/rpiv-config";
-import { loadJsonConfigWithLegacyFallback, validateGuidanceFields } from "@juicesharp/rpiv-config";
+import { loadJsonConfig, validateGuidanceFields } from "@juicesharp/rpiv-config";
 
 interface TodoConfig {
 	guidance?: GuidanceFields;
@@ -26,8 +29,33 @@ export const DEFAULT_COLLAPSE_KEY: CollapseKeySpec = "ctrl+shift+t";
 /** Sentinel value for `collapseKey` that disables the collapse shortcut entirely. */
 export const COLLAPSE_KEY_OFF: CollapseKeySpec = "off";
 
+function expandTilde(p: string): string {
+	if (p === "~") return homedir();
+	if (p.startsWith("~/")) return join(homedir(), p.slice(2));
+	return p;
+}
+
+function defaultLocalDataDir(): string {
+	return join(homedir(), ".local", "share");
+}
+
+function resolveTodoDataDir(): string {
+	const raw = process.env.XDG_DATA_HOME?.trim();
+	if (!raw) return defaultLocalDataDir();
+	const expanded = expandTilde(raw);
+	return isAbsolute(expanded) ? expanded : defaultLocalDataDir();
+}
+
+export function getTodoConfigPath(): string {
+	return join(resolveTodoDataDir(), "rpiv-todo", "config.json");
+}
+
 export function loadConfig(): TodoConfig {
-	return loadJsonConfigWithLegacyFallback<TodoConfig>("rpiv-todo");
+	const xdgPath = getTodoConfigPath();
+	if (existsSync(xdgPath)) {
+		return loadJsonConfig<TodoConfig>(xdgPath);
+	}
+	return loadJsonConfig<TodoConfig>(join(defaultLocalDataDir(), "rpiv-todo", "config.json"));
 }
 
 /** Content-row budget for the overlay, read fresh on every call (per-render —

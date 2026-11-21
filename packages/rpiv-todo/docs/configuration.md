@@ -8,16 +8,16 @@ reads, where the file lives, and exactly what happens when a value is wrong.
 
 The config file is optional. It is resolved in this order:
 
-1. `$XDG_CONFIG_HOME/rpiv-todo/config.json` — used when `XDG_CONFIG_HOME` is set
+1. `$XDG_DATA_HOME/rpiv-todo/config.json` — used when `XDG_DATA_HOME` is set
    to an absolute path. A bare `~` or a leading `~/` is expanded first; a `~user`
    form is not expanded and therefore falls through.
-2. `~/.config/rpiv-todo/config.json` — used when `XDG_CONFIG_HOME` is unset,
+2. `~/.local/share/rpiv-todo/config.json` — used when `XDG_DATA_HOME` is unset,
    empty, whitespace-only, or relative.
-3. If the XDG file does not exist, the legacy `~/.config/rpiv-todo/config.json`
-   is read anyway, so a pre-XDG file is still found after you set
-   `XDG_CONFIG_HOME`. This fallback is one-way: if the XDG file exists but is
+3. If the XDG file does not exist, the default `~/.local/share/rpiv-todo/config.json`
+   is read anyway, so an existing file is still found after you set
+   `XDG_DATA_HOME`. This fallback is one-way: if the XDG file exists but is
    malformed, you get a warning and defaults — it does **not** quietly read the
-   legacy file instead.
+   fallback file instead.
 
 Both files missing means every default applies. Malformed JSON prints a
 `rpiv-config: invalid JSON at …` warning and is treated as `{}`. A JSON array or
@@ -101,8 +101,8 @@ guideline bullets are used.
 
 | Variable | Effect |
 | --- | --- |
-| `XDG_CONFIG_HOME` | Relocates the config directory, as described above. |
-| `HOME` | Anchors `~/.config` when `XDG_CONFIG_HOME` does not apply. |
+| `XDG_DATA_HOME` | Relocates the config directory, as described above. |
+| `HOME` | Anchors `~/.local/share` when `XDG_DATA_HOME` does not apply. |
 
 `rpiv-todo` reads no environment variables of its own. If you have
 [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n)

@@ -7,6 +7,13 @@
 - Rebranded the broader Pi workspace as `pi-harmony`.
 - Bundled `rpiv-ask-user-question` and the `web-search-cli` skill with the existing UI and tools.
 
+## 1.6.1 — 2026-11-21
+
+### Changed
+
+- **Moved `rpiv-todo` config location out of `~/.config`.** `packages/rpiv-todo` now resolves its optional `config.json` under `$XDG_DATA_HOME/rpiv-todo/config.json` or `~/.local/share/rpiv-todo/config.json` instead of `~/.config/rpiv-todo/config.json`.
+- **Cleaned up repository & typecheck coverage.** Removed the redundant `extensions/todo/` directory, added `packages/rpiv-todo/index.ts` to `npm run typecheck`, and added `*.bak` and `extensions/terminal/.npmignore` to `.gitignore`.
+
 ## 1.6.0 — 2026-11-21
 
 ### Bundled Todo Tracking (`rpiv-todo`)

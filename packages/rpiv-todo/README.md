@@ -69,8 +69,8 @@ by status.
 
 ## Configuration
 
-Optional. Create `~/.config/rpiv-todo/config.json` (or
-`$XDG_CONFIG_HOME/rpiv-todo/config.json` if you set that variable):
+Optional. Create `~/.local/share/rpiv-todo/config.json` (or
+`$XDG_DATA_HOME/rpiv-todo/config.json` if you set that variable):
 
 ```json
 {
