@@ -13,7 +13,7 @@ test("package.json pi.extensions uses TypeScript entrypoints for jiti module ali
 	}
 });
 
-test("UserMessageComponent renders prompt marker and background band after extension init", () => {
+test("UserMessageComponent renders prompt marker and background band after extension init", async () => {
 	initTheme("dark");
 	const fakePi: any = {
 		on() {},
@@ -26,7 +26,7 @@ test("UserMessageComponent renders prompt marker and background band after exten
 		},
 		events: { on() {}, emit() {} },
 	};
-	initTools(fakePi);
+	await initTools(fakePi);
 
 	const component = new UserMessageComponent("hello world");
 	const lines = component.render(40);

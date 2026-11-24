@@ -22,7 +22,7 @@
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
 import { COLLAPSE_KEY_OFF, resolveCollapseKey } from "./config.ts";
-import { I18N_NAMESPACE } from "./state/i18n-bridge.ts";
+import { activateI18nScope, I18N_NAMESPACE } from "./state/i18n-bridge.ts";
 import { replayFromBranch } from "./state/replay.ts";
 import {
 	clearActiveRenderSession,
@@ -100,11 +100,18 @@ export function makeTodoOverlayLoader(
 //
 // The `/loader` subpath is used instead of the SDK entry so the i18n-ui +
 // pi-tui modules are not pulled into our load graph just to register strings.
-try {
-	const sdk = (await import("@juicesharp/rpiv-i18n/loader")) as I18nLoader;
-	sdk.registerLocalesFromDir(I18N_NAMESPACE, import.meta.url, { label: "rpiv-todo" });
-} catch {
-	// SDK absent — extension still loads with English-only UI.
+// Registration is deferred off the load path (no top-level await): the bridge already
+// falls back to English until the locales land, and `/languages` flips them live, so
+// the tool is registered immediately while the SDK loads in the background.
+function registerLocalesInBackground(): void {
+	setImmediate(() => {
+		import("@juicesharp/rpiv-i18n/loader")
+			.then((sdk) => (sdk as I18nLoader).registerLocalesFromDir(I18N_NAMESPACE, import.meta.url, { label: "rpiv-todo" }))
+			.catch(() => {
+				// SDK absent — extension still loads with English-only UI.
+			})
+			.then(() => activateI18nScope());
+	});
 }
 
 // pi-core's ExtensionRunner throws this exact phrase from an invalidated ctx
@@ -147,6 +154,7 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		todoOverlay.update();
 	}
 
+	registerLocalesInBackground();
 	registerTodoTool(pi);
 	registerTodosCommand(pi);
 
@@ -191,7 +199,7 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		if (isForeground) await updateTodoOverlay(true);
 	};
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (event, ctx) => {
 		let id: string;
 		try {
 			id = sid(ctx);
@@ -205,9 +213,12 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 			return;
 		}
 		if (!ctx.hasUI) return;
-		// First UI-bearing session_start claims the foreground (the interactive
-		// launcher, by spawn-ordering) without eagerly loading the overlay.
-		if (getActiveRenderSession() === "") setActiveRenderSession(id);
+		const reason = (event as { reason?: string })?.reason;
+		const isForegroundTransition =
+			reason === "startup" || reason === "reload" || reason === "new" || reason === "resume" || reason === "fork";
+		// First UI-bearing session_start (or explicit foreground replacement) claims
+		// the foreground without eagerly loading the overlay.
+		if (getActiveRenderSession() === "" || isForegroundTransition) setActiveRenderSession(id);
 		// Only the foreground re-binds/refreshes the shared overlay. A child
 		// (distinct sid) is skipped — does not rebind to a relay/stale ui.
 		if (id !== getActiveRenderSession()) return;
@@ -261,8 +272,17 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 
 	// Reads getTodos() at render time; do NOT call replayFromBranch here
 	// (branch is stale — message_end runs after tool_execution_end).
-	pi.on("tool_execution_end", async (event) => {
+	pi.on("tool_execution_end", async (event, ctx) => {
 		if (event.toolName !== TOOL_NAME || event.isError) return;
+		if (ctx?.hasUI) {
+			try {
+				const id = sid(ctx);
+				if (getActiveRenderSession() === "") setActiveRenderSession(id);
+				if (!uiCtx && id === getActiveRenderSession()) uiCtx = ctx.ui;
+			} catch (e) {
+				if (!isStaleCtxError(e)) throw e;
+			}
+		}
 		try {
 			await updateTodoOverlay();
 		} catch (e) {

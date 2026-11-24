@@ -1025,10 +1025,11 @@ function formatTodoOverlayLines(lines: string[], width: number): string[] {
 		firstContent = plain;
 		break;
 	}
-	if (!firstContent || !/^[●○]\s+Todos\s+—/.test(firstContent)) return lines;
+	const TODO_HEADING_RE = /^[●○]\s+Todos(?:\s+—|\s+\(\d+\/\d+\))/;
+	if (!firstContent || !TODO_HEADING_RE.test(firstContent)) return lines;
 	return lines.map((line) => {
 		const plain = stripAnsi(line);
-		if (/^[●○]\s+Todos\s+—/.test(plain)) return clampLineWidth(` ${line}`, width);
+		if (TODO_HEADING_RE.test(plain)) return clampLineWidth(` ${line}`, width);
 		// Magic Context emits `├─` / `└─` or bare `├` / `└`; strip any arm to bare tee/corner.
 		if (!/^[├└]─?\s+[✓○◐✗●⬤•]\s/.test(plain) && !/^[├└]─?\s+/.test(plain)) return line;
 		const withoutTodoHash = line.replace(/#(?=[A-Za-z0-9_-]+)/, "");

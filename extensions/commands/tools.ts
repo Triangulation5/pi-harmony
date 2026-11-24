@@ -451,14 +451,15 @@ export function registerToolsCommand(pi: any, deps: ToolsCommandDependencies): v
 					return;
 				}
 				writeSettingsKey("todoEnabled", next);
+				if (ctx.hasUI) ctx.ui.notify(`Todo extension: ${next ? "on" : "off"} (reloading...)`, "info");
 				try {
 					await ctx.reload();
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
-					if (ctx.hasUI) ctx.ui.notify(`Todo setting saved as ${next ? "on" : "off"}, but extension reload failed: ${message}`, "error");
-					return;
+					try {
+						if (ctx.hasUI) ctx.ui.notify(`Todo setting saved as ${next ? "on" : "off"}, but extension reload failed: ${message}`, "error");
+					} catch { /* ctx may already be invalidated */ }
 				}
-				if (ctx.hasUI) ctx.ui.notify(`Todo extension: ${next ? "on" : "off"}`, "info");
 				return;
 			}
 	

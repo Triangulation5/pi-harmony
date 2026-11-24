@@ -44,7 +44,6 @@
     "extensions/settings/**",
     "extensions/terminal/**",
     "extensions/markdown/**",
-    "extensions/shared/**",
     "skills/web-search-cli/SKILL.md",
     "skills/web-search-cli/scripts/search.py",
     "skills/web-search-cli/scripts/run-search.mjs",
@@ -68,9 +67,9 @@
   },
   "peerDependencies": {
     "@juicesharp/rpiv-i18n": "*",
+    "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
-    "@sinclair/typebox": "*",
     "typebox": "*"
   },
   "peerDependenciesMeta": {

@@ -94,7 +94,7 @@ export class TodoOverlay {
 			this.hiddenCompletedTaskIds.add(taskId);
 		}
 		this.completedTaskIdsPendingHide.clear();
-		this.tui?.requestRender();
+		this.update();
 	}
 
 	toggleCollapse(): void {

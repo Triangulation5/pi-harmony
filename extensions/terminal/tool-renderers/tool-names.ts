@@ -1,4 +1,5 @@
 const CORE_TOOL_OVERRIDES = new Set(["read", "bash", "grep", "find", "ls", "write", "edit"]);
+const CUSTOM_RENDERER_TOOLS = new Set(["todo", "ask_user_question"]);
 
 const OPENAI_STYLE_TOOL_NAMES = new Set([
 	"apply_patch",
@@ -76,7 +77,7 @@ export function toolDisplayName(name: string): string {
 }
 
 export function shouldUseGenericToolRenderer(name: unknown): boolean {
-	return typeof name === "string" && name.length > 0 && !CORE_TOOL_OVERRIDES.has(name);
+	return typeof name === "string" && name.length > 0 && !CORE_TOOL_OVERRIDES.has(name) && !CUSTOM_RENDERER_TOOLS.has(name);
 }
 
 export function genericToolLabel(name: string): string {

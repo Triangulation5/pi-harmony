@@ -99,6 +99,41 @@ export function formatCommandTaskLine(t: Task, glyph: string): string {
 	return `  ${glyph} #${t.id} ${sanitizeTerminalText(t.subject)}${form}${block}`;
 }
 
+/**
+ * Format a tool status indicator dot.
+ */
+function toolStatusDot(ctx: any, theme: Theme): string {
+	const status = ctx?.state?._toolStatus;
+	if (status === "pending") return theme.fg("muted", "⚪");
+	if (status === "success") return theme.fg("success", "🟢");
+	if (status === "error") return theme.fg("error", "🔴");
+	return theme.fg("muted", "⚪");
+}
+
+/**
+ * Format the live line count indicator (for streaming).
+ */
+function liveLineCountTrailing(ctx: any, theme: Theme): string {
+	if (ctx?.isPartial !== true) return "";
+	const count = ctx?.state?._liveLineCount;
+	if (typeof count !== "number" || !Number.isFinite(count) || count <= 0) return "";
+	return ` ${theme.fg("muted", "(${lineCountLabel(count)})")}`;
+}
+
+/**
+ * Update tool status based on context for proper dot display.
+ */
+export function syncTodoStatus(ctx: any): void {
+	if (!ctx?.state) return;
+	if (ctx.isPartial && ctx.executionStarted === true) {
+		ctx.state._toolStatus = "pending";
+	} else if (ctx.isPartial) {
+		ctx.state._toolStatus = "idle";
+	} else {
+		ctx.state._toolStatus = ctx.isError ? "error" : "success";
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Tool render hooks — wrapped so `todo.ts` becomes a thin call-site.
 // ---------------------------------------------------------------------------
@@ -112,24 +147,37 @@ export function renderTodoCall(
 	args: TaskMutationParams & { action?: TaskAction },
 	theme: Theme,
 	state: TaskState,
+	ctx?: any,
 ): Text {
-	let text = theme.fg("toolTitle", theme.bold("todo "));
-	if (args.action) text += theme.fg("muted", ACTION_GLYPH[args.action] ?? args.action);
-
-	if (args.action === "create" && args.subject) {
-		text += ` ${theme.fg("dim", sanitizeTerminalText(args.subject))}`;
-	} else if (args.action === "create" && Array.isArray(args.tasks)) {
-		text += ` ${theme.fg("dim", `${args.tasks.length} tasks`)}`;
-	} else if (
-		(args.action === "update" || args.action === "get" || args.action === "delete") &&
-		args.id !== undefined
-	) {
+	// Format summary with proper wrapping and themed colors
+	let summary = "";
+	if (args.action === "create") {
+		if (args.subject) {
+			summary = sanitizeTerminalText(args.subject);
+		} else if (Array.isArray(args.tasks)) {
+			summary = `${args.tasks.length} task${args.tasks.length > 1 ? "s" : ""}`;
+		} else {
+			summary = "create task";
+		}
+	} else if (args.action === "update" && args.id !== undefined) {
 		const subject = selectTaskSubjectById(state, args.id);
-		text += ` ${theme.fg("accent", subject ? sanitizeTerminalText(subject) : `#${args.id}`)}`;
-	} else if (args.action === "list" && args.status) {
-		text += ` ${theme.fg("muted", formatStatusLabel(args.status))}`;
+		summary = subject ? sanitizeTerminalText(subject) : `#${args.id}`;
+	} else if (args.action === "delete" && args.id !== undefined) {
+		const subject = selectTaskSubjectById(state, args.id);
+		summary = subject ? sanitizeTerminalText(subject) : `#${args.id}`;
+	} else if (args.action === "get" && args.id !== undefined) {
+		const subject = selectTaskSubjectById(state, args.id);
+		summary = subject ? sanitizeTerminalText(subject) : `#${args.id}`;
+	} else if (args.action === "list") {
+		summary = args.status || "all";
+	} else if (args.action === "clear") {
+		summary = "clear all tasks";
 	}
-	return new Text(text, 0, 0);
+
+	// Create tool header with status dot and summary in themed colors
+	const header = `${theme.fg("toolTitle", theme.bold("todo"))} ${theme.fg("accent", summary || (args.action ? ACTION_GLYPH[args.action] : ''))}${liveLineCountTrailing(ctx, theme)}`;
+
+	return new Text(header, 0, 0);
 }
 
 /**
@@ -138,13 +186,15 @@ export function renderTodoCall(
  */
 export function renderTodoResult(result: ToolResultView, theme: Theme, isError = false): Text {
 	const failure = failureReason(result, isError);
-	if (failure !== undefined) return new Text(theme.fg("error", failure ? `✗ ${failure}` : "✗"), 0, 0);
+	if (failure !== undefined) {
+		return new Text(`${theme.fg("error", "✗")} ${theme.fg("muted", failure)}`, 0, 0);
+	}
 
 	const status = echoedStatus(result.details as TaskDetails | undefined);
 	if (status) {
-		return new Text(theme.fg(STATUS_COLOR[status], `${STATUS_GLYPH[status]} ${formatStatusLabel(status)}`), 0, 0);
+		return new Text(`${theme.fg(STATUS_COLOR[status], STATUS_GLYPH[status])} ${theme.fg("muted", formatStatusLabel(status))}`, 0, 0);
 	}
-	return new Text(theme.fg("success", "✓"), 0, 0);
+	return new Text(`${theme.fg("success", "✓")} ${theme.fg("muted", "done")}`, 0, 0);
 }
 
 type ToolResultView = { content?: Array<{ type: string; text?: string }>; details?: unknown };

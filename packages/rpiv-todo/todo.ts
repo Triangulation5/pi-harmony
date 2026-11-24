@@ -31,7 +31,7 @@ import {
 	TOOL_NAME,
 	TodoParamsSchema,
 } from "./tool/types.ts";
-import { formatCommandTaskLine, renderTodoCall, renderTodoResult } from "./view/format.ts";
+import { formatCommandTaskLine, renderTodoCall, renderTodoResult, syncTodoStatus } from "./view/format.ts";
 
 // English fallbacks for localized /todos section headers — the box-drawing
 // decoration is part of the localized string so translators can adjust spacing.
@@ -108,8 +108,10 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 		// foreground lookup and falls back to `#<id>` (see renderTodoCall). That is the
 		// safe outcome: per-session ids restart at 1, so searching sibling slots could
 		// surface the WRONG subject — the `#<id>` fallback is intentional, not a gap.
-		renderCall(args, theme, _context) {
-			return renderTodoCall(args as never, theme, getRenderState());
+		renderCall(args, theme, context) {
+			const state = getRenderState();
+		syncTodoStatus(context);
+		return renderTodoCall(args as never, theme, state, context);
 		},
 
 		renderResult(result, _opts, theme, context) {
